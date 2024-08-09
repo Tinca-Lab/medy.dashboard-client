@@ -1,11 +1,11 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'pre',
   auth: true,
+  layout: 'pre',
 })
 
 useHead({
-  title: 'Inicio',
+  title: 'Prepagada'
 })
 </script>
 

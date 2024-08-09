@@ -1,16 +1,17 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'pre',
   auth: true,
+  role: ['ADMIN', 'DOCTOR'],
+  layout: 'pre',
 })
 
 useHead({
-  title: 'Inicio',
+  title: 'Paciente',
 })
 </script>
 
 <template>
-  <div/>
+
 </template>
 
 <style scoped>

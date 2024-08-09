@@ -48,14 +48,6 @@ const onSubmit = async () => {
                 class="w-8 h-8 flex-shrink-0 text-gray-900 dark:text-white"
             />
             <p class="text-2xl text-gray-900 dark:text-white font-bold">Welcome back!</p>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">
-              Don't have an account?
-              <ULink
-                  class="text-primary font-medium hover:underline"
-                  to="/register">
-                Sign up
-              </ULink>
-            </p>
           </div>
         </template>
         <template #default>

@@ -8,5 +8,20 @@ export default defineNuxtConfig({
         },
     },
 
-    modules: ['@nuxt/ui'],
+    css: [
+        '~/assets/css/main.css',
+        '~/assets/css/tailwind.css',
+    ],
+
+
+    modules: ['@nuxt/ui', '@nuxtjs/google-fonts'],
+
+    googleFonts: {
+        preload: true,
+        prefetch: true,
+        preconnect: true,
+        families: {
+            Poppins: true,
+        },
+    },
 })

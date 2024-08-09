@@ -1,6 +1,6 @@
 import type {Ref} from "vue";
 
-export default defineNuxtRouteMiddleware((to) => {
+export default defineNuxtRouteMiddleware(async (to) => {
     const auth = useAuth();
     const config = useAppConfig();
     const loggedIn: Ref<boolean> = auth.loggedIn;
