@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import {UserType} from "~/types/user";
 import type {Ref} from "vue";
-import {z} from "zod";
 import dayjs from "dayjs";
 
 useHead({
@@ -53,64 +51,14 @@ const columns = [
   },
 ];
 
-const createServiceSchema = z.object({
-  name: z.string({
-    message: 'El nombre no es válido'
-  }),
-  price: z.number({
-    message: 'El precio no es válido'
-  }),
-  discount: z.number({
-    message: 'El descuento no es válido'
-  }).min(1).max(100).optional()
-});
-
-// data
-const createService = ref<{
-  name: string | undefined;
-  doctorId: string | undefined;
-  price: number | undefined;
-  discount?: number | undefined;
-}>({
-  name: undefined,
-  doctorId: undefined,
-  price: undefined,
-  discount: undefined,
-});
-const isCreating = ref(false);
-
 const page = ref(1);
 const pageSize = ref(10);
 const sortBy = ref('createdAt');
 const sort = ref('asc');
 
-const q = ref('');
-const selectedDoctors = ref<any[]>([]);
 const queryService: Ref<string> = ref('');
+const isLoadingDeletingService: Ref<boolean> = ref(false);
 
-const {data: doctors, refresh: onFetchDoctors} = await useApi<any[]>('/doctors', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  watch: [page, pageSize, sortBy, sort],
-  params: {
-    filters: {
-      name: {
-        $regex: q,
-        $options: 'i'
-      }
-    }
-  },
-  default: () => [],
-  transform: (data) => {
-    return data.map((doctor) => ({
-      _id: doctor._id,
-      full_name: `${doctor.name} ${doctor.lastname}`,
-      name: doctor.name,
-      lastname: doctor.lastname,
-    }))
-  },
-})
 
 const {data: services, pending: isLoadingServices, refresh: onFetchServices} = await useApi<any[]>('/services', {
   method: 'GET',
@@ -129,7 +77,6 @@ const {data: services, pending: isLoadingServices, refresh: onFetchServices} = a
       }
     }
   },
-  default: () => [],
   transform: (data) => {
     return data.map((service) => ({
       _id: service._id,
@@ -146,7 +93,6 @@ const {data: count, refresh: onFetchCount} = await useApi<number>('/services/cou
   method: 'GET',
   server: false,
   lazy: true,
-  default: () => 0,
   transform: (data) => Number(data),
   params: {
     filters: {
@@ -161,46 +107,33 @@ const {data: count, refresh: onFetchCount} = await useApi<number>('/services/cou
 const selected: Ref<any[]> = ref([]);
 
 // methods
-const onSubmit = async () => {
+const onDeleteService = async (id: string) => {
+  if (!confirm('¿Estás seguro de eliminar este servicio? Esta acción no se puede deshacer')) {
+    return;
+  }
+  isLoadingDeletingService.value = true;
   try {
-    await $api('/services', {
-      method: 'POST',
-      body: {
-        name: createService.value.name,
-        price: createService.value.price,
-        discount: createService.value.discount,
-        doctors: selectedDoctors.value,
-      },
-    })
+    await $api(`/services/${id}`, {
+      method: 'DELETE',
+    });
     toast.add({
       title: '¡Listo!',
-      description: 'El servicio ha sido creado exitosamente',
-      color: 'green'
-    })
-    onFetchServices();
-    onFetchCount();
-    isCreating.value = false;
+      description: 'El servicio ha sido eliminado correctamente',
+      color: 'green',
+    });
+    await onFetchServices();
+    await onFetchCount();
+    isLoadingDeletingService.value = true;
   } catch (e: unknown | any) {
+    isLoadingDeletingService.value = true;
+    await onFetchServices();
+    await onFetchCount();
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ocurrió un error desconocido al crear el servicio',
-      color: 'red'
-    })
+      description: e.data.message || 'Ha ocurrido un error al eliminar el servicio',
+      color: 'red',
+    });
   }
-}
-
-// computed
-const createServiceState = computed(() => ({
-  name: createService.value.name,
-  price: createService.value.price,
-  discount: createService.value.discount,
-}))
-
-// methods
-const onSearchDoctors = async (search: string) => {
-  q.value = search;
-  await onFetchDoctors();
-  return doctors.value;
 }
 </script>
 
@@ -217,7 +150,7 @@ const onSearchDoctors = async (search: string) => {
         />
       </UFormGroup>
       <UButton
-          @click="isCreating=!isCreating"
+          to="/services/create"
           trailing-icon="i-heroicons-plus">
         Crear servicio
       </UButton>
@@ -244,80 +177,28 @@ const onSearchDoctors = async (search: string) => {
               class="animate-spin h-8 w-8 text-primary"/>
         </div>
       </template>
+      <template #actions-data="{ row }">
+        <article class="flex items-center gap-2">
+          <UButton
+              variant="ghost"
+              :to="`/services/${row._id}`"
+              size="sm"
+              trailing-icon="i-heroicons-pencil"
+          />
+          <UButton
+              @click="onDeleteService(row._id)"
+              size="sm"
+              color="red"
+              trailing-icon="i-heroicons-trash"
+          />
+        </article>
+      </template>
     </UTable>
     <UPagination
         v-model="page"
         :page-count="pageSize"
         :total="count || 0"
     />
-    <!--    -->
-    <Teleport to="body">
-      <UModal v-model="isCreating">
-        <UContainer>
-          <UForm
-              @submit="onSubmit"
-              :state="createServiceState"
-              :schema="createServiceSchema"
-              class="grid grid-cols-2 gap-4">
-            <UFormGroup
-                class="col-span-full"
-                label="Nombres" name="name" required>
-              <UInput
-                  required
-                  type="text"
-                  v-model="createService.name"
-                  placeholder="eg. Odontología"
-              />
-            </UFormGroup>
-
-            <UFormGroup
-                class="col-span-full"
-                label="Cósto del servicio" name="price" required>
-              <UInput
-                  :min="1"
-                  required
-                  type="number"
-                  v-model="createService.price"
-                  placeholder="eg. 100000"
-              />
-            </UFormGroup>
-
-            <UFormGroup
-                class="col-span-full"
-                label="Descuento del servicio" name="discount">
-              <UInput
-                  :min="1"
-                  :max="100"
-                  type="number"
-                  v-model="createService.discount"
-                  placeholder="eg. 10"
-              />
-            </UFormGroup>
-
-            <UFormGroup
-                class="col-span-full"
-                label="Especialista" name="doctorId" required
-            >
-              <USelectMenu
-                  :multiple="true"
-                  :searchable="onSearchDoctors"
-                  searchable-placeholder="Buscar un especialista"
-                  placeholder="Selecciona los especialistas"
-                  :options="doctors || []"
-                  option-attribute="full_name"
-                  value-attribute="_id"
-                  by="_id"
-                  v-model="selectedDoctors"
-              />
-            </UFormGroup>
-
-            <UButton type="submit" class="col-span-full" block>
-              Crear servicio
-            </UButton>
-          </UForm>
-        </UContainer>
-      </UModal>
-    </Teleport>
   </div>
 </template>
 

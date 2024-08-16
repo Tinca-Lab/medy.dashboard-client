@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import {UserType} from "~/types/user";
 import type {Ref} from "vue";
-import {z} from "zod";
 import dayjs from "dayjs";
 
 useHead({
@@ -14,11 +12,8 @@ definePageMeta({
   layout: 'pre',
 })
 
-// composable
 const {$api} = useNuxtApp();
-const {user} = useAuth();
 const toast = useToast();
-
 
 // non reactive data
 const columns = [
@@ -29,10 +24,6 @@ const columns = [
   {
     label: 'Correo electrónico',
     key: 'email',
-  },
-  {
-    label: 'Fecha de nacimiento',
-    key: 'birthdate',
   },
   {
     label: 'Creado en',
@@ -50,61 +41,17 @@ const columns = [
   },
 ];
 
-const createUserSchema = z.object({
-  name: z.string({
-    message: 'El nombre no es válido'
-  }),
-  lastname: z.string({
-    message: 'El apellido no es válido'
-  }),
-  email: z.string({
-    message: 'El correo electrónico no es válido'
-  }).email({
-    message: 'El correo electrónico no es válido'
-  }),
-  password: z.string().min(8, {
-    message: 'La contraseña debe tener entre 8 y 32 caracteres'
-  }).max(32, {
-    message: 'La contraseña debe tener entre 8 y 32 caracteres'
-  }).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,32}$/, {
-    message: 'La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial'
-  }),
-  confirm_password: z.string().min(8, {
-    message: 'La contraseña debe tener entre 8 y 32 caracteres'
-  }).max(32, {
-    message: 'La contraseña debe tener entre 8 y 32 caracteres'
-  }).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,32}$/, {
-    message: 'La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial'
-  }),
-  kind: z.nativeEnum(UserType),
-});
 
 // data
-const createUser = ref<{
-  name: string;
-  lastname: string;
-  email: string;
-  password: string;
-  confirm_password: string;
-  kind: UserType;
-}>({
-  name: undefined,
-  lastname: undefined,
-  email: '',
-  password: '',
-  confirm_password: '',
-  kind: UserType.DOCTOR,
-});
-const isCreating = ref(false);
-
 const queryDoctor: Ref<string> = ref('');
+const isLoadingDeletingDoctor = ref(false);
 
 const page = ref(1);
 const pageSize = ref(10);
 const sortBy = ref('createdAt');
 const sort = ref('asc');
 
-const {data: doctors, pending: isLoadingDoctors, refresh: onFetchDoctors} = await useApi<any[]>('/doctors', {
+const {data: doctors, pending: isLoadingDoctors, refresh: FetchDoctors} = await useApi<any[]>('/doctors', {
   method: 'GET',
   server: false,
   lazy: true,
@@ -137,20 +84,18 @@ const {data: doctors, pending: isLoadingDoctors, refresh: onFetchDoctors} = awai
       ]
     }
   },
-  default: () => [],
   transform: (data) => {
     return data.map((doctor) => ({
       _id: doctor._id,
       name: `${doctor.name} ${doctor.lastname}`,
-      email: doctor.email,
-      birthdate: doctor.birthdate ? dayjs(doctor.birthdate).format('MMM D, YYYY') : 'N/A',
+      email: doctor.email || 'N/A',
       createdAt: dayjs(doctor.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(doctor.updatedAt).format('MMM D, YYYY h:mm A'),
     }))
   }
 })
 
-const {data: count, refresh: onFetchCount} = await useApi<number>('/doctors/count', {
+const {data: count, refresh: FetchCount} = await useApi<number>('/doctors/count', {
   method: 'GET',
   server: false,
   lazy: true,
@@ -178,49 +123,37 @@ const {data: count, refresh: onFetchCount} = await useApi<number>('/doctors/coun
       ]
     }
   },
-  default: () => 0,
   transform: (data) => Number(data),
 });
 
 const selected: Ref<any[]> = ref([]);
 
-// methods
-const onSubmit = async () => {
+const onDeleteDoctor = async (id: string) => {
+  if (!confirm('¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer')) {
+    return;
+  }
   try {
-    await $api('/doctors', {
-      method: 'POST',
-      body: {
-        confirmPassword: createUser.value.confirm_password,
-        ...createUser.value,
-        tenantId: user.value.tenantId,
-      },
+    isLoadingDeletingDoctor.value = true;
+    await $api(`/doctors/${id}`, {
+      method: 'DELETE',
     })
     toast.add({
       title: '¡Listo!',
-      description: 'El doctor ha sido creado exitosamente',
+      description: 'El profesional ha sido eliminado exitosamente',
       color: 'green'
     })
-    onFetchDoctors();
-    onFetchCount();
-    isCreating.value = false;
+    isLoadingDeletingDoctor.value = false;
+    await FetchDoctors();
+    await FetchCount();
   } catch (e: unknown | any) {
+    isLoadingDeletingDoctor.value = false;
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ocurrió un error desconocido al crear el usuario',
+      description: e.data.message || 'Ocurrió un error desconocido al eliminar el usuario',
       color: 'red'
     })
   }
 };
-
-// computed
-const createUserState = computed(() => ({
-  name: createUser.value.name,
-  lastname: createUser.value.lastname,
-  email: createUser.value.email,
-  password: createUser.value.password,
-  confirm_password: createUser.value.confirm_password,
-  kind: createUser.value.kind,
-}))
 </script>
 
 <template>
@@ -236,7 +169,7 @@ const createUserState = computed(() => ({
         />
       </UFormGroup>
       <UButton
-          @click="isCreating=!isCreating"
+          to="/doctors/create"
           trailing-icon="i-heroicons-plus">
         Crear doctor
       </UButton>
@@ -263,80 +196,30 @@ const createUserState = computed(() => ({
               class="animate-spin h-8 w-8 text-primary"/>
         </div>
       </template>
+      <template #actions-data="{row}">
+        <article class="space-x-2">
+          <UButton
+              size="sm"
+              title="Editar especialista"
+              variant="ghost"
+              :to="`/doctors/${row._id}`"
+              trailing-icon="i-heroicons-pencil"
+          />
+          <UButton
+              size="sm"
+              color="red"
+              title="Eliminar especialista"
+              @click="onDeleteDoctor(row._id)"
+              trailing-icon="i-heroicons-trash"
+          />
+        </article>
+      </template>
     </UTable>
     <UPagination
         v-model="page"
         :page-count="pageSize"
         :total="count || 0"
     />
-    <!--    -->
-    <Teleport to="body">
-      <UModal v-model="isCreating">
-        <UContainer>
-          <UForm
-              @submit="onSubmit"
-              :state="createUserState"
-              :schema="createUserSchema"
-              class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Nombres" name="name" required>
-              <UInput
-                  required
-                  type="text"
-                  v-model="createUser.name"
-                  placeholder="eg. John"
-              />
-            </UFormGroup>
-            <UFormGroup label="Apellidos" name="lastname" required>
-              <UInput
-                  type="text"
-                  required
-                  v-model="createUser.lastname"
-                  placeholder="eg. Doe"
-              />
-            </UFormGroup>
-            <UFormGroup
-                class="col-span-full"
-                label="Correo electrónico"
-                name="email"
-                required>
-              <UInput
-                  required
-                  v-model="createUser.email"
-                  type="email"
-                  placeholder="eg. john@doe.com"
-              />
-            </UFormGroup>
-            <UFormGroup
-                help="La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial eg. @, $, !, %, *, ?, &, #"
-                label="Contraseña"
-                name="password"
-                required>
-              <UInput
-                  required
-                  v-model="createUser.password"
-                  type="password"
-                  placeholder="********"
-              />
-            </UFormGroup>
-            <UFormGroup
-                help="La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial eg. @, $, !, %, *, ?, &, #"
-                label="Confirma la contraseña"
-                name="confirm_password"
-                required>
-              <UInput
-                  required
-                  v-model="createUser.confirm_password"
-                  type="password"
-                  placeholder="********"
-              />
-            </UFormGroup>
-            <UButton type="submit" class="col-span-full" block>
-              Crear paciente
-            </UButton>
-          </UForm>
-        </UContainer>
-      </UModal>
-    </Teleport>
   </div>
 </template>
 

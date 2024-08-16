@@ -14,7 +14,7 @@ useHead({
 
 const columns = [
   {
-    label: 'Numero',
+    label: 'Serial',
     key: 'serial',
     sortable: true
   },
@@ -26,10 +26,16 @@ const columns = [
   {
     label: 'Cargado a',
     key: 'givenBy',
+    sortable: true,
   },
   {
     label: 'Creado en',
     key: 'createdAt',
+    sortable: true
+  },
+  {
+    label: 'Actualizado en',
+    key: 'updatedAt',
     sortable: true
   },
   {
@@ -86,6 +92,7 @@ const uploadingDocumentsSchema = z.object({
 });
 
 const toast = useToast();
+const router = useRouter();
 const {$api} = useNuxtApp();
 
 const isUploadingDocuments: Ref<boolean> = ref(false);
@@ -144,15 +151,17 @@ const {data: documents, refresh: FetchDocuments} = await useApi<any[]>('/documen
   watch: [page, pageSize, sortBy, sort],
   transform: (data) => {
     return data.map((document: any) => ({
-      createdAt: dayjs(document.createdAt).format('MMM D, YYYY'),
-      kind: document.kind === 'CONTRACT' ? 'Contrato' : 'Recibo',
-      serial: document.serial,
-      givenBy: document.givenBy || 'NO ASIGNADO',
+      _id: document._id,
+      createdAt: dayjs(document.createdAt).format('MMM D, YYYY h:mm A'),
+      updatedAt: dayjs(document.updatedAt).format('MMM D, YYYY h:mm A'),
+      kind: document.kind === 'CONTRACT' ? 'CONTRATO' : 'RECIBO',
+      serial: `${document.prefix}${document.serial}`,
+      givenBy: document.givenBy ? `${document.givenBy.name} ${document.givenBy.lastname}` : 'NO ASIGNADO'
     }))
   }
 });
 
-const {data: count} = await useApi<number>('/document/count', {
+const {data: count, refresh: FetchCount} = await useApi<number>('/document/count', {
   params: {
     filters: {
       serial: {
@@ -161,10 +170,9 @@ const {data: count} = await useApi<number>('/document/count', {
       }
     }
   },
-  default() {
-    return 0;
-  },
   watch: [serial],
+  server: false,
+  lazy: true,
   transform: (data) => {
     return Number(data);
   }
@@ -209,6 +217,7 @@ const {data: assistants, refresh: FetchAssistants} = await useApi<any[]>('/users
   }
 });
 
+// computed
 const creatingDocumentsState = computed(() => ({
   kind: payload.value.kind,
   prefix: payload.value.prefix,
@@ -224,7 +233,9 @@ const uploadingDocumentsState = computed(() => ({
   user: uploadingPayload.value.userId
 }));
 
+// methods
 const onCreateDocuments = async () => {
+  if (!confirm('¿Estás seguro de crear estos documentos?')) return;
   isLoadingCreatingDocuments.value = true;
   try {
     await $api('/document', {
@@ -237,7 +248,8 @@ const onCreateDocuments = async () => {
       }
     });
     isLoadingCreatingDocuments.value = false;
-    FetchDocuments();
+    await FetchDocuments();
+    await FetchCount();
     toast.add({
       title: '¡Listo!',
       description: 'Documentos creados correctamente',
@@ -263,6 +275,7 @@ const onCreateDocuments = async () => {
 };
 
 const onAssignDocuments = async () => {
+  if (!confirm('¿Estás seguro de asignar estos documentos?')) return;
   isLoadingUploadingDocuments.value = true;
   try {
     await $api('/document/assign', {
@@ -276,7 +289,8 @@ const onAssignDocuments = async () => {
       }
     });
     isLoadingUploadingDocuments.value = false;
-    FetchDocuments();
+    await FetchDocuments();
+    await FetchCount();
     toast.add({
       title: '¡Listo!',
       description: 'Documentos assignados correctamente',
@@ -291,11 +305,35 @@ const onAssignDocuments = async () => {
     isLoadingUploadingDocuments.value = false;
     isUploadingDocuments.value = false;
   } catch (e: unknown | any) {
+    await FetchDocuments();
+    await FetchCount();
     isLoadingUploadingDocuments.value = false;
     isUploadingDocuments.value = false;
     toast.add({
       title: '¡Ups!',
       description: e.data.message || 'Ha ocurrido un error inesperado al asignar los documentos',
+      color: 'red'
+    });
+  }
+}
+
+const onDeleteDocument = async (id: string) => {
+  if (!confirm('¿Estás seguro de eliminar este documento?')) return;
+  try {
+    await $api(`/document/${id}`, {
+      method: 'DELETE'
+    });
+    await FetchDocuments();
+    await FetchCount();
+    toast.add({
+      title: '¡Listo!',
+      description: 'Documento eliminado correctamente',
+      color: 'green'
+    })
+  } catch (e: unknown | any) {
+    toast.add({
+      title: '¡Ups!',
+      description: e.data.message || 'Ha ocurrido un error inesperado al eliminar el documento',
       color: 'red'
     });
   }
@@ -314,7 +352,6 @@ const onSearchAssistants = async (q: string) => {
       Papelería
     </h2>
     <nav class="flex justify-between items-end">
-      <!--   TODO:   Cambiar por UForm -->
       <UFormGroup
           label="Serial del documento"
           required
@@ -348,6 +385,23 @@ const onSearchAssistants = async (q: string) => {
         <div class="flex items-center justify-center h-64">
           <p class="text-gray-500 dark:text-gray-400">No hay documentos</p>
         </div>
+      </template>
+      <template #actions-data="{row}">
+        <article class="space-x-2">
+          <UButton
+              type="button"
+              @click="router.push(`/pre/documents/${row._id}`)"
+              icon="i-heroicons-pencil"
+              variant="ghost"
+              size="sm">
+          </UButton>
+          <UButton
+              @click="onDeleteDocument(row._id)"
+              color="red"
+              icon="i-heroicons-trash"
+              size="sm"
+          />
+        </article>
       </template>
     </UTable>
     <!--    -->
@@ -427,6 +481,7 @@ const onSearchAssistants = async (q: string) => {
         </article>
       </UModal>
     </Teleport>
+    <!--    -->
     <Teleport to="body">
       <UModal v-model="isUploadingDocuments">
         <article>
@@ -444,7 +499,7 @@ const onSearchAssistants = async (q: string) => {
               <USelectMenu
                   searchable-placeholder="Buscar asesor"
                   :options="assistants || []"
-                  :searchable="onSearchAssistants"
+                  :searchable="onSearchAssistants as any"
                   placeholder="Seleccione un asesor"
                   option-attribute="full_name"
                   value-attribute="_id"

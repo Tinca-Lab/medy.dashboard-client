@@ -83,50 +83,22 @@ const affiliationStatus = [
     value: 'PENDING'
   },
 ]
-const creatingAffiliationSchema = z.object({
-  patient: z.string({
-    message: 'Titular inválido'
-  }),
-  status: z.string({
-    message: 'Estado inválido'
-  }),
-  contract: z.string({
-    message: 'Contrato inválido'
-  }),
-  subscription: z.string({
-    message: 'Suscripción inválida'
-  }),
-});
 
 const toast = useToast();
 const {$api} = useNuxtApp();
+const router = useRouter();
 
-const isCreatingAffiliation: Ref<boolean> = ref(false);
-const isLoadingCreatingAffiliation: Ref<boolean> = ref(false);
+const isLoadingDeletingAffiliation: Ref<boolean> = ref(false);
 
 const patient: Ref<string> = ref('');
 
-const queryPatient: Ref<string> = ref('');
-const queryContract: Ref<string> = ref('');
 
 const page: Ref<number> = ref(1);
 const pageSize: Ref<number> = ref(10);
 const sortBy: Ref<string> = ref('createdAt');
 const sort: Ref<string> = ref('desc');
 
-const payload: Ref<{
-  patientId: string;
-  subscriptionId: string;
-  status: string;
-  contract: string;
-  logs?: { key: string, value: string }[]
-}> = ref({
-  patientId: '',
-  subscriptionId: '',
-  status: '',
-  contract: '',
-  logs: []
-});
+
 
 const {data: affiliations, refresh: FetchAffiliations} = await useApi<any[]>('/affiliation', {
   params: {
@@ -135,18 +107,35 @@ const {data: affiliations, refresh: FetchAffiliations} = await useApi<any[]>('/a
     sortBy: sortBy,
     sort: sort,
     filters: {
-      patientId: {
-        $regex: patient,
-        $options: 'i'
-      }
+      $or: [
+        {
+          'patient.name': {
+            $regex: patient,
+            $options: 'i'
+          }
+        },
+        {
+          'patient.lastname': {
+            $regex: patient,
+            $options: 'i'
+          }
+        },
+        {
+          'patient.document': {
+            $regex: patient,
+            $options: 'i'
+          }
+        }
+      ]
     }
   },
   watch: [page, pageSize, sortBy, sort],
   transform: (data) => {
     return data.map((affiliation: any) => ({
-      patient: affiliation.patientId,
+      _id: affiliation._id,
+      patient: `${affiliation.patient.name} ${affiliation.patient.lastname}`,
       kind: affiliation.subscription.name,
-      contract: affiliation.contract,
+      contract: `${affiliation.contract.prefix}${affiliation.contract.serial}`,
       beneficiaries: affiliation.beneficiaries.length || 0,
       status: affiliationStatus.find((status) => status.value === affiliation.status)?.label,
       expiresAt: dayjs(affiliation.expiresAt).format('MMM D, YYYY h:mm A'),
@@ -156,166 +145,63 @@ const {data: affiliations, refresh: FetchAffiliations} = await useApi<any[]>('/a
   }
 });
 
-const {data: count} = await useApi<number>('/affiliation/count', {
-  params: {
-    filters: {
-      patientId: {
-        $regex: patient,
-        $options: 'i'
-      }
-    }
-  },
-  watch: [patient],
-  transform: (data) => {
-    return Number(data);
-  }
-});
-
-const {data: patients, refresh: onFetchPatients} = await useApi<any[]>('/patients', {
+const {data: count, refresh: FetchCount} = await useApi<number>('/affiliation/count', {
   method: 'GET',
-  server: false,
-  lazy: true,
   params: {
-    page: 1,
-    pageSize: 10,
-    sortBy: 'name',
-    sort: 'desc',
     filters: {
       $or: [
         {
-          name: {
-            $regex: queryPatient,
+          'patient.name': {
+            $regex: patient,
             $options: 'i'
           }
         },
         {
-          lastname: {
-            $regex: queryPatient,
+          'patient.lastname': {
+            $regex: patient,
             $options: 'i'
           }
         },
         {
-          document: {
-            $regex: queryPatient,
+          'patient.document': {
+            $regex: patient,
             $options: 'i'
           }
         }
-      ],
+      ]
     }
   },
-  transform: (data) => {
-    return data.map((patient) => ({
-      _id: patient._id,
-      name: `${patient.name} ${patient.lastname}`,
-      email: patient.email,
-      document: patient.document,
-    }))
-  }
-})
-
-const {data: contracts, refresh: FetchContracts} = await useApi<any[]>('/document', {
-  method: 'GET',
+  default: () => ref(null),
   server: false,
   lazy: true,
-  params: {
-    page: 1,
-    pageSize: 10,
-    sortBy: 'serial',
-    sort: 'desc',
-    filters: {
-      serial: {
-        $regex: queryContract,
-        $options: 'i'
-      },
-      kind: 'CONTRACT'
-    }
-  },
-  transform: (data) => {
-    return data.map((contract) => ({
-      _id: contract._id,
-      serial: contract.serial,
-    }))
-  }
-})
+  watch: [patient],
+  transform: (data) => Number(data)
+});
 
-
-const {data: subscriptions} = await useApi<any[]>('/subscriptions', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  params: {
-    page: 1,
-    pageSize: 10,
-    sortBy: 'name',
-    sort: 'desc',
-    filters: {}
-  },
-  transform: (data) => {
-    return data.map((subscription) => ({
-      _id: subscription._id,
-      name: subscription.name,
-      description: subscription.description,
-    }))
-  }
-})
-
-
-const creatingAffiliationState = computed(() => ({
-  patient: payload.value.patientId,
-  subscription: payload.value.subscriptionId,
-  status: payload.value.status,
-  contract: payload.value.contract
-}));
-
-const onCreateAffiliation = async () => {
-  isLoadingCreatingAffiliation.value = true;
+const onDeleteAffiliation = async (id: string) => {
+  if (!confirm('¿Estás seguro de eliminar esta afiliación?')) return;
+  isLoadingDeletingAffiliation.value = true;
   try {
-    await $api('/affiliation', {
-      method: 'POST',
-      body: {
-        patientId: payload.value.patientId,
-        subscriptionId: payload.value.subscriptionId,
-        status: payload.value.status,
-        contract: payload.value.contract,
-        logs: payload.value.logs
-      }
-    });
-    isLoadingCreatingAffiliation.value = false;
-    await FetchAffiliations();
+    await $api(`/affiliation/${id}`, {
+      method: 'DELETE',
+    })
     toast.add({
       title: '¡Listo!',
-      description: 'Afiliacion creada correctamente',
+      description: 'La afiliación ha sido eliminada exitosamente',
       color: 'green'
     })
-    payload.value = {
-      patientId: '',
-      subscriptionId: '',
-      status: '',
-      contract: '',
-      logs: []
-    }
-    isCreatingAffiliation.value = false;
   } catch (e: unknown | any) {
-    isLoadingCreatingAffiliation.value = false;
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ha ocurrido un error inesperado al crear los documentos',
+      description: e.data.message || 'Ocurrió un error desconocido al eliminar la afiliación',
       color: 'red'
-    });
+    })
+  } finally {
+    await FetchAffiliations();
+    await FetchCount();
+    isLoadingDeletingAffiliation.value = false;
   }
-}
-
-const onSearchPatients = async (q: string) => {
-  queryPatient.value = q;
-  await onFetchPatients();
-  return patients.value;
-}
-
-const onSearchContracts = async (q: string) => {
-  queryContract.value = q;
-  await FetchContracts();
-  return contracts.value;
-}
+};
 </script>
 
 <template>
@@ -335,7 +221,7 @@ const onSearchContracts = async (q: string) => {
         />
       </UFormGroup>
       <UButton
-          @click="isCreatingAffiliation = !isCreatingAffiliation"
+          @click="router.push('/pre/affiliation/create')"
           trailing-icon="i-heroicons-plus">
         Crear afiliacion
       </UButton>
@@ -350,6 +236,22 @@ const onSearchContracts = async (q: string) => {
           <p class="text-gray-500 dark:text-gray-400">No hay afiliaciones</p>
         </div>
       </template>
+      <template #actions-data="{row}">
+        <article class="space-x-2">
+          <UButton
+              size="sm"
+              variant="ghost"
+              icon="i-heroicons-pencil"
+              :to="`/pre/affiliation/${row._id}`"
+          />
+          <UButton
+              color="red"
+              size="sm"
+              icon="i-heroicons-trash"
+              @click="onDeleteAffiliation(row._id)"
+          />
+        </article>
+      </template>
     </UTable>
     <!--    -->
     <UPagination
@@ -357,119 +259,6 @@ const onSearchContracts = async (q: string) => {
         :page-count="pageSize"
         :total="count || 0"
     />
-    <!--    -->
-    <Teleport to="body">
-      <UModal v-model="isCreatingAffiliation">
-        <article>
-          <UForm
-              :schema="creatingAffiliationSchema"
-              :state="creatingAffiliationState"
-              class="p-4 space-y-4"
-              @submit="onCreateAffiliation">
-
-            <UFormGroup
-                label="Titular"
-                name="patient"
-                required>
-              <USelectMenu
-                  searchable-placeholder="Buscar titular"
-                  :searchable="onSearchPatients"
-                  v-model="payload.patientId"
-                  required
-                  placeholder="Seleccione un titular"
-                  :options="patients || []"
-                  by="_id"
-                  option-attribute="name"
-                  value-attribute="document"
-              />
-            </UFormGroup>
-
-            <UFormGroup
-                label="Tipo de afiliacion"
-                name="subscription"
-                required>
-              <USelectMenu
-                  v-model="payload.subscriptionId"
-                  required
-                  placeholder="Seleccione un tipo de afiliacion"
-                  option-attribute="name"
-                  value-attribute="_id"
-                  :options="subscriptions || []"
-              />
-            </UFormGroup>
-
-            <UFormGroup
-                label="Contrato"
-                name="contract"
-                required>
-              <USelectMenu
-                  searchable-placeholder="Buscar contrato"
-                  :searchable="onSearchContracts"
-                  :options="contracts || []"
-                  v-model="payload.contract"
-                  option-attribute="serial"
-                  value-attribute="serial"
-                  required
-                  placeholder="Seleccione un contrato"
-              />
-            </UFormGroup>
-
-            <UFormGroup
-                label="Estado"
-                name="kind"
-                required>
-              <USelect
-                  v-model="payload.status"
-                  required
-                  placeholder="Seleccione un tipo"
-                  option-attribute="label"
-                  value-attribute="value"
-                  :options="affiliationStatus"
-              />
-            </UFormGroup>
-
-            <article
-                v-for="(_, i) in payload.logs"
-            >
-              <UFormGroup
-                  v-if="payload.logs"
-                  :label="`Observacion ${i + 1}`"
-                  :name="'logs.' + i"
-              >
-                <UTextarea
-                    v-model="payload.logs[i].value"
-                    placeholder="eg. El titular tiene una deuda"
-                />
-                <UButton
-                    class="mt-2"
-                    icon="i-heroicons-trash"
-                    size="sm"
-                    variant="outline"
-                    @click="payload.logs?.splice(i, 1)"
-                    type="button"/>
-              </UFormGroup>
-            </article>
-
-            <UButton
-                size="sm"
-                variant="outline"
-                @click="payload.logs?.push({ key: 'note', value: '' })"
-                type="button"
-            >
-              Agregar observacion
-            </UButton>
-
-
-            <UButton
-                :loading="isLoadingCreatingAffiliation"
-                :disabled="isLoadingCreatingAffiliation"
-                type="submit" block>
-              Crear afiliación
-            </UButton>
-          </UForm>
-        </article>
-      </UModal>
-    </Teleport>
   </div>
 </template>
 

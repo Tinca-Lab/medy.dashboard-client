@@ -7,13 +7,7 @@ definePageMeta({
 });
 
 useHead({
-  title: 'Sign In',
-  meta: [
-    {
-      name: 'description',
-      content: 'Login to your account',
-    },
-  ],
+  title: 'Iniciar sesión'
 })
 
 const colorMode = useColorMode();

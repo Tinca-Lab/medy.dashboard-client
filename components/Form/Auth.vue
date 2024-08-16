@@ -8,8 +8,12 @@ const emits = defineEmits<{
 }>();
 
 const schema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, 'Password must be at least 6 characters long'),
+  email: z.string({
+    message: "Correo electrónico requerido",
+  }).email("Correo electrónico inválido"),
+  password: z.string({
+    message: "Contraseña requerida",
+  }).min(1, "Contraseña inválida"),
 });
 
 const email = defineModel('email', {
@@ -47,20 +51,20 @@ const onSubmit = async () => {
                 name="i-heroicons-lock-closed"
                 class="w-8 h-8 flex-shrink-0 text-gray-900 dark:text-white"
             />
-            <p class="text-2xl text-gray-900 dark:text-white font-bold">Welcome back!</p>
+            <p class="text-2xl text-gray-900 dark:text-white font-bold">¡Bienvenid@!</p>
           </div>
         </template>
         <template #default>
           <article class="flex flex-col gap-4">
             <UFormGroup
                 required
-                label="Email"
+                label="Correo electrónico"
                 name="email"
-                help="We'll never share your email with anyone else."
+                help="Nunca compartiremos tu correo electrónico con nadie más."
             >
               <UInput
                   type="email"
-                  placeholder="Email"
+                  placeholder="john@doe.com"
                   icon="i-heroicons-envelope"
                   v-model="email"
                   required
@@ -69,11 +73,11 @@ const onSubmit = async () => {
             <UFormGroup
                 required
                 name="password"
-                label="Password"
+                label="Contraseña"
             >
               <UInput
                   type="password"
-                  placeholder="Password"
+                  placeholder="********"
                   v-model="password"
                   icon="i-heroicons-lock-closed"
                   required
@@ -82,14 +86,14 @@ const onSubmit = async () => {
             <UButton
                 type="submit"
                 block>
-              Sign in
+              Iniciar sesión
             </UButton>
           </article>
           <UDivider class="my-4"/>
           <p class="text-gray-500 dark:text-gray-400">
-            By signing in, you agree to our
+            Al iniciar sesión, aceptas nuestros
             <NuxtLink class="font-medium text-primary">
-              Terms of Service
+              Términos de servicio
             </NuxtLink>
             .
           </p>

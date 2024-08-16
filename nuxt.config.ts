@@ -24,4 +24,9 @@ export default defineNuxtConfig({
             Poppins: true,
         },
     },
+
+    colorMode: {
+        preference: 'light',
+        fallback: 'light',
+    }
 })
