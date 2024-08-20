@@ -79,14 +79,23 @@ const editingAffiliationSchema = z.object({
   }),
 });
 
+const isReceipts: Ref<boolean> = ref(false);
+const isAddingReceipt: Ref<boolean> = ref(false);
+const receipt = ref({
+  _id: '',
+  value: 0,
+  description: undefined,
+});
+
 const isLoadingEditingAffiliation: Ref<boolean> = ref(false);
 
 const queryPatient: Ref<string> = ref('');
 const queryContract: Ref<string> = ref('');
+const queryReceipt: Ref<string> = ref('');
 
 const isBeneficiaries = ref(false);
 
-const {data: affiliation, error: errorAffiliation} = await useApi<{
+const {data: affiliation, error: errorAffiliation, refresh: FetchAffiliation} = await useApi<{
   patient: {
     _id: string;
     name: string;
@@ -113,6 +122,7 @@ const {data: affiliation, error: errorAffiliation} = await useApi<{
     document: string;
   }[];
   expiresAt: string;
+  receipts?: any[];
 }>(`/affiliation/${route.params.id}`, {
   method: 'GET',
   server: true,
@@ -138,6 +148,7 @@ const {data: affiliation, error: errorAffiliation} = await useApi<{
     logs: affiliation.logs || [],
     beneficiaries: affiliation.beneficiaries || [],
     expiresAt: dayjs(affiliation.expiresAt).format('YYYY-MM-DD'),
+    receipts: affiliation.receipts || [],
   })
 })
 
@@ -205,7 +216,36 @@ const {data: contracts, refresh: FetchContracts} = await useApi<any[]>('/documen
         $regex: queryContract,
         $options: 'i'
       },
+      used: false,
       kind: 'CONTRACT'
+    }
+  },
+  transform: (data) => {
+    return data.map((contract) => ({
+      _id: contract._id,
+      serial: contract.serial,
+      prefix: contract.prefix,
+      full_serial: `${contract.prefix}${contract.serial}`,
+    }))
+  }
+})
+
+const {data: receipts, refresh: FetchReceipts} = await useApi<any[]>('/document', {
+  method: 'GET',
+  server: false,
+  lazy: true,
+  params: {
+    page: 1,
+    pageSize: 10,
+    sortBy: 'serial',
+    sort: 'desc',
+    filters: {
+      serial: {
+        $regex: queryReceipt,
+        $options: 'i'
+      },
+      used: false,
+      kind: 'RECEIPT'
     }
   },
   transform: (data) => {
@@ -270,30 +310,39 @@ const onSearchContracts = async (q: string) => {
   return contracts.value;
 }
 
+const onSearchReceipts = async (q: string) => {
+  queryReceipt.value = q;
+  await FetchReceipts();
+  return receipts.value;
+}
+
 const onSubmit = async () => {
+  if (!confirm('¿Estás seguro de editar esta afiliación?')) {
+    return;
+  }
   try {
     isLoadingEditingAffiliation.value = true;
     await $api(`/affiliation/${route.params.id}`, {
       method: 'PUT',
       body: {
         patient: {
-          _id: affiliation.value.patient._id,
-          name: affiliation.value.patient.name,
-          lastname: affiliation.value.patient.lastname,
+          _id: affiliation.value?.patient._id,
+          name: affiliation.value?.patient.name,
+          lastname: affiliation.value?.patient.lastname,
         },
-        status: affiliation.value.status,
+        status: affiliation.value?.status,
         contract: {
-          _id: affiliation.value.contract._id,
-          serial: affiliation.value.contract.serial,
-          prefix: affiliation.value.contract.prefix,
+          _id: affiliation.value?.contract._id,
+          serial: affiliation.value?.contract.serial,
+          prefix: affiliation.value?.contract.prefix,
         },
         subscription: {
-          _id: affiliation.value.subscription._id,
-          name: affiliation.value.subscription.name,
+          _id: affiliation.value?.subscription._id,
+          name: affiliation.value?.subscription.name,
         },
-        logs: affiliation.value.logs,
-        beneficiaries: affiliation.value.beneficiaries,
-        expiresAt: new Date(affiliation.value.expiresAt).toUTCString(),
+        logs: affiliation.value?.logs,
+        beneficiaries: affiliation.value?.beneficiaries,
+        expiresAt: affiliation.value?.expiresAt ? new Date(affiliation.value.expiresAt).toUTCString() : null,
       }
     });
     toast.add({
@@ -312,6 +361,65 @@ const onSubmit = async () => {
     isLoadingEditingAffiliation.value = false;
   }
 }
+
+const onAddReceipt = async () => {
+  if (!confirm('¿Estás seguro de asignar este recibo?')) {
+    return;
+  }
+  const receipts = affiliation.value?.receipts || [];
+
+  if (receipts.find((r) => r._id === receipt.value._id)) {
+    toast.add({
+      title: '¡Ups!',
+      description: 'Este recibo ya ha sido asignado',
+      color: 'yellow',
+    })
+    return;
+  }
+
+  if (!receipt.value._id) {
+    toast.add({
+      title: '¡Ups!',
+      description: 'Debes seleccionar un recibo',
+      color: 'red',
+    })
+    return;
+  }
+
+
+  try {
+    isLoadingEditingAffiliation.value = true;
+    await $api(`/affiliation/${route.params.id}/assign-receipt`, {
+      method: 'POST',
+      body: {
+        affiliationId: route.params.id,
+        receiptId: receipt.value._id,
+        value: receipt.value.value,
+        description: receipt.value.description,
+      }
+    });
+    toast.add({
+      title: '¡Listo!',
+      description: 'Recibo asignado correctamente',
+      color: 'green',
+    })
+  } catch (e: unknown | any) {
+    toast.add({
+      title: '¡Ups!',
+      description: e.data.message || 'Ha ocurrido un error al asignar el recibo',
+      color: 'red',
+    })
+  } finally {
+    await FetchAffiliation();
+    isAddingReceipt.value = false;
+    isLoadingEditingAffiliation.value = false;
+    receipt.value = {
+      _id: '',
+      value: 0,
+      description: undefined,
+    }
+  }
+}
 </script>
 
 <template>
@@ -322,11 +430,29 @@ const onSubmit = async () => {
         confirm
     />
     <UForm
+        v-if="affiliation"
         :schema="editingAffiliationSchema"
         :state="editingAffiliationState"
         class="max-w-screen-sm mx-auto space-y-4"
         @submit="onSubmit">
 
+      <section class="flex items-center justify-between">
+        <p>
+          Contrato:
+          <NuxtLink
+              :to="`/pre/documents/${affiliation.contract._id}?redirect=/pre/affiliation/${route.params.id}`"
+          >
+            <b class="underline">
+              {{ affiliation.contract.prefix }} {{ affiliation.contract.serial }}
+            </b>
+          </NuxtLink>
+        </p>
+        <UButton
+            @click="isReceipts = !isReceipts"
+            variant="link">
+          Ver recibos
+        </UButton>
+      </section>
       <UCard>
         <article class="space-y-4">
           <UFormGroup
@@ -441,7 +567,7 @@ const onSubmit = async () => {
           <p class="font-semibold text-xl">
             {{ affiliation.beneficiaries.length }}
             <span class="text-lg">
-              beneficiarios
+              beneficiario(s)
             </span>
           </p>
 
@@ -456,8 +582,17 @@ const onSubmit = async () => {
           </UButton>
 
           <UButton
+              class="mx-2"
+              size="sm"
+              variant="outline"
+              @click="isAddingReceipt = !isAddingReceipt"
+              type="button"
+          >
+            Asignar recibo
+          </UButton>
+
+          <UButton
               @click="isBeneficiaries = !isBeneficiaries"
-              class="ml-2"
               size="sm"
           >
             Beneficiarios
@@ -554,9 +689,84 @@ const onSubmit = async () => {
         Actualizar afiliación
       </UButton>
     </UForm>
-    {{ affiliation }}
+    <Teleport to="body">
+      <USlideover v-model="isReceipts">
+        <article class="p-4 space-y-4 overflow-y-auto">
+          <p class="text-lg font-semibold">
+            Recibos
+          </p>
+          <UCard
+              v-for="receipt in affiliation?.receipts"
+          >
+            <NuxtLink
+                :to="`/pre/documents/${receipt._id}`"
+            >
+              <p>
+                Recibo:
+                <b>
+                  {{ receipt.prefix }} {{ receipt.serial }}
+                </b>
+              </p>
+              <span>
+              {{ dayjs(receipt.createdAt).format('DD MMM, YYYY') }}
+            </span>
+              <p class="text-green-700">
+                $ {{ new Intl.NumberFormat('es-CO').format(receipt.value) }} COP
+              </p>
+              <p class="text-sm truncate">
+                {{ receipt.description }}
+              </p>
+            </NuxtLink>
+          </UCard>
+        </article>
+      </USlideover>
+      <UModal v-model="isAddingReceipt">
+        <article v-if="affiliation" class="p-4 space-y-4">
+          <p class="text-lg font-bold mb-4">
+            Agregar recibo
+          </p>
+          <UFormGroup
+              required
+              label="Recibo"
+          >
+            <USelectMenu
+                searchable-placeholder="Buscar recibo"
+                :searchable="onSearchReceipts as any"
+                placeholder="Seleccionar recibo"
+                option-attribute="full_serial"
+                v-model="receipt"
+                :options="receipts || []">
+              <template #empty>
+                No hay recibos
+              </template>
+            </USelectMenu>
+          </UFormGroup>
+          <UFormGroup
+              label="Valor"
+              required
+          >
+            <UInput :disabled="!receipt._id" v-model="receipt.value" placeholder="eg. 100000" type="number" :min="1"/>
+          </UFormGroup>
+          <UFormGroup
+              label="Descripción"
+          >
+            <UTextarea
+                :maxrows="4"
+                v-model="receipt.description"
+                placeholder="eg. Usuario abono a la deuda"
+            />
+          </UFormGroup>
+          <UButton
+              @click="onAddReceipt"
+              type="button"
+              size="sm"
+          >
+            Asignar recibo
+          </UButton>
+        </article>
+      </UModal>
+    </Teleport>
   </section>
-
 </template>
 
 <style scoped>

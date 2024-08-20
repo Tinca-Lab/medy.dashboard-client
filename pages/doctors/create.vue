@@ -95,7 +95,6 @@ const onSubmit = async () => {
     }
     await router.push('/doctors');
   } catch (e: unknown | any) {
-    console.log(e);
     toast.add({
       title: '¡Ups!',
       description: e.data.message || 'Ocurrió un error desconocido al crear el usuario',

@@ -39,7 +39,7 @@ const editingDocumentSchema = z.object({
     _id: z.string(),
     name: z.string(),
     lastname: z.string(),
-    document: z.string()
+    full_name: z.string()
   }),
   serial: z.string({
     message: 'Serial inválido'
@@ -53,11 +53,33 @@ const isLoadingEditingDocument: Ref<boolean> = ref(false);
 const {data: document, error: errorDocument} = await useApi<{
   kind: string;
   prefix: string;
-  givenBy: string;
+  givenBy: {
+    _id: string;
+    name: string;
+    lastname: string;
+  };
   serial: string;
 }>(`/document/${route.params.id}`, {
-  method: 'GET'
+  method: 'GET',
+  transform: (data) => ({
+    kind: data.kind,
+    prefix: data.prefix,
+    givenBy: data.givenBy ? {
+      _id: data.givenBy._id,
+      name: data.givenBy.name,
+      lastname: data.givenBy.lastname,
+      full_name: `${data.givenBy.name} ${data.givenBy.lastname}`
+    } : {},
+    serial: data.serial
+  })
 });
+
+if (!document.value && errorDocument.value) {
+  throw createError({
+    statusCode: 404,
+    message: 'Documento no encontrado'
+  });
+}
 
 const queryAssistant: Ref<string> = ref('');
 const {data: assistants, refresh: FetchAssistants} = await useApi<any[]>('/users', {
@@ -67,7 +89,6 @@ const {data: assistants, refresh: FetchAssistants} = await useApi<any[]>('/users
     sortBy: 'name',
     sort: 'desc',
     filters: {
-
       $or: [
         {
           document: {
@@ -102,13 +123,6 @@ const {data: assistants, refresh: FetchAssistants} = await useApi<any[]>('/users
   }
 });
 
-if (!document.value && errorDocument.value) {
-  throw createError({
-    statusCode: 404,
-    message: 'Papeleria no encontrado'
-  });
-}
-
 const editingDocumentState = computed(() => ({
   kind: document.value?.kind,
   prefix: document.value?.prefix,
@@ -130,7 +144,6 @@ const onUpdateDocument = async () => {
           _id: document.value?.givenBy?._id,
           name: document.value?.givenBy?.name,
           lastname: document.value?.givenBy?.lastname,
-          document: document.value?.givenBy?.document
         },
         serial: document.value?.serial
       }
@@ -162,11 +175,12 @@ const onSearchAssistants = async (query: string) => {
 <template>
   <UContainer>
     <AppNavHeader
-        back="/pre/documents"
+        :back="route.query.redirect || '/pre/documents'"
         title="Editar papeleria"
         confirm
     />
     <UForm
+        v-if="document"
         :schema="editingDocumentSchema"
         :state="editingDocumentState"
         @submit="onUpdateDocument"
@@ -212,22 +226,20 @@ const onSearchAssistants = async (query: string) => {
 
           <UFormGroup
               label="Asesor"
-              name="user"
+              name="givenBy"
               required
           >
-            {{ document.givenBy || '' }}
             <USelectMenu
-                searchable-placeholder="Buscar asesor"
-                :options="assistants || []"
+                searchable-placeholder="Buscar titular o escribe para crear uno nuevo"
                 :searchable="onSearchAssistants as any"
-                placeholder="Seleccione un asesor"
+                v-model="document.givenBy"
+                required
+                placeholder="Seleccione un titular"
+                :options="assistants || []"
+                by="_id"
                 option-attribute="full_name"
-                :model-value="document.givenBy || ''"
-                @update:model-value="document.givenBy = $event"
             />
           </UFormGroup>
-
-
         </article>
       </UCard>
 
@@ -235,7 +247,8 @@ const onSearchAssistants = async (query: string) => {
       <UButton
           :loading="isLoadingEditingDocument"
           :disabled="isLoadingEditingDocument"
-          type="submit" block>
+          type="submit"
+          block>
         Editar documento
       </UButton>
     </UForm>
