@@ -50,8 +50,20 @@ const columns = [
     key: 'name',
   },
   {
+    label: 'Tipo de documento',
+    key: 'typeDocument',
+  },
+  {
+    label: 'Documento',
+    key: 'document',
+  },
+  {
     label: 'Correo electrónico',
     key: 'email',
+  },
+  {
+    label: 'Celular',
+    key: 'phone',
   },
   {
     label: 'Creado en',
@@ -116,7 +128,10 @@ const {data: patients, pending: isLoadingPatients, refresh: onFetchPatients} = a
     return data.map((patient) => ({
       _id: patient._id,
       name: `${patient.name} ${patient.lastname}`,
-      email: patient.email,
+      email: patient.email || 'N/A',
+      phone: patient.phone || 'N/A',
+      typeDocument: patient.typeDocument || 'N/A',
+      document: patient.document || 'N/A',
       createdAt: dayjs(patient.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(patient.updatedAt).format('MMM D, YYYY h:mm A'),
     }))
@@ -159,6 +174,9 @@ const {data: count, refresh: onFetchCount} = await useApi<number>('/patients/cou
 const selected: Ref<any[]> = ref([]);
 
 const onDeletePatient = async (id: string) => {
+  if (!confirm('¿Estás seguro de eliminar este paciente? Esta acción no se puede deshacer')) {
+    return;
+  }
   try {
     await $api(`/patients/${id}`, {
       method: 'DELETE',

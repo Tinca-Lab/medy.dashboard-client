@@ -438,6 +438,14 @@ const onSubmit = async () => {
             </UFormGroup>
           </article>
 
+          <p class="font-semibold text-xl">
+            {{ affiliation.beneficiaries.length }}
+            <span class="text-lg">
+              beneficiarios
+            </span>
+          </p>
+
+
           <UButton
               size="sm"
               variant="outline"
@@ -455,6 +463,7 @@ const onSubmit = async () => {
             Beneficiarios
           </UButton>
         </article>
+
       </UCard>
 
       <Teleport to="body">
@@ -517,14 +526,22 @@ const onSubmit = async () => {
                 </article>
               </UCard>
             </section>
-
-            <UButton
-                size="sm"
-                variant="outline"
-                @click="affiliation.beneficiaries?.push({ name: '', document: '' , lastname: ''})"
-                type="button">
-              Agregar beneficiario
-            </UButton>
+            <section class="flex items-center gap-2">
+              <UButton
+                  size="sm"
+                  variant="outline"
+                  @click="affiliation.beneficiaries?.push({ name: '', document: '' , lastname: ''})"
+                  type="button">
+                Agregar beneficiario
+              </UButton>
+              <UButton
+                  @click="isBeneficiaries = false"
+                  size="sm"
+                  type="button"
+              >
+                Guardar beneficiarios
+              </UButton>
+            </section>
           </section>
         </UModal>
       </Teleport>

@@ -17,6 +17,15 @@ const toast = useToast();
 const router = useRouter();
 const route = useRoute();
 
+const typeDocumentOptions = [
+  {label: 'Cédula de ciudadanía', value: 'CC'},
+  {label: 'Cédula de extranjería', value: 'CE'},
+  {label: 'Pasaporte', value: 'PA'},
+  {label: 'Tarjeta de identidad', value: 'TI'},
+  {label: 'Registro civil', value: 'RC'},
+  {label: 'NIT', value: 'NIT'},
+];
+
 const editUserSchema = z.object({
   name: z.string({
     message: 'El nombre no es válido'
@@ -24,51 +33,70 @@ const editUserSchema = z.object({
   lastname: z.string({
     message: 'El apellido no es válido'
   }),
+  document: z.string({
+    message: 'El documento no es válido'
+  }).regex(/^(?=.*\d)[\dA-Za-z\-]{5,20}$/, {
+    message: 'El numero de documento no es un número de documento colombiano válido'
+  }),
+  typeDocument: z.string({
+    message: 'El tipo de documento no es válido'
+  }),
   email: z.string({
     message: 'El correo electrónico no es válido'
   }).email({
     message: 'El correo electrónico no es válido'
-  }),
+  }).optional().nullish(),
+  phone: z.string({
+    message: 'El correo electrónico no es válido'
+  }).regex(/^(\+57)?3\d{9}$/, {
+    message: 'El número de teléfono no es un numero de teléfono colombiano válido'
+  }).optional().nullish(),
   password: z.string().min(8, {
     message: 'La contraseña debe tener entre 8 y 32 caracteres'
   }).max(32, {
     message: 'La contraseña debe tener entre 8 y 32 caracteres'
   }).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,32}$/, {
     message: 'La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial'
-  }),
+  }).optional().nullish(),
   confirm_password: z.string().min(8, {
     message: 'La contraseña debe tener entre 8 y 32 caracteres'
   }).max(32, {
     message: 'La contraseña debe tener entre 8 y 32 caracteres'
   }).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,32}$/, {
     message: 'La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial'
-  }),
+  }).optional().nullish(),
   kind: z.nativeEnum(UserType),
+  granted: z.boolean().optional().nullish(),
 });
 
 // data
 const {data: user, error: errorUser} = await useApi<{
   name: string;
   lastname: string;
+  document: string;
+  typeDocument: string;
   email: string;
+  phone: string;
   kind: UserType;
   password: string;
   confirm_password: string;
-}>(`/users/${route.params.id}`, {
+  granted?: boolean;
+}>(`/patients/${route.params.id}`, {
   method: 'GET',
-  transform: (data: {
-    name: string;
-    lastname: string;
-    email: string;
-    kind: UserType;
-  }) => ({
-    name: data.name,
-    lastname: data.lastname,
-    email: data.email,
-    kind: data.kind,
-    password: '',
-    confirm_password: '',
-  }),
+  transform: (data) => {
+    return {
+      name: data.name,
+      lastname: data.lastname,
+      document: data.document,
+      typeDocument: data.typeDocument,
+      email: data.email,
+      phone: data.phone,
+      kind: data.kind,
+      granted: data.granted,
+      password: undefined,
+      confirm_password: undefined,
+    }
+  },
 })
 
 if (!user.value && errorUser.value) {
@@ -80,9 +108,12 @@ if (!user.value && errorUser.value) {
 
 // methods
 const onSubmit = async () => {
+  if (!confirm('¿Estás seguro de actualizar este paciente?')) {
+    return;
+  }
   try {
-    await $api('/patients', {
-      method: 'POST',
+    await $api(`/patients/${route.params.id}`, {
+      method: 'PUT',
       body: {
         confirmPassword: user.value?.confirm_password,
         ...user.value,
@@ -119,17 +150,22 @@ const onSubmit = async () => {
 const editUserState = computed(() => ({
   name: user.value?.name,
   lastname: user.value?.lastname,
+  document: user.value?.document,
+  typeDocument: user.value?.typeDocument,
   email: user.value?.email,
+  phone: user.value?.phone,
   password: user.value?.password,
   confirm_password: user.value?.confirm_password,
   kind: user.value?.kind,
+  granted: user.value?.granted,
 }))
 </script>
 
 <template>
   <section class="space-y-4">
-    <AppNavHeader title="Crear paciente" back="/patients" confirm/>
+    <AppNavHeader title="Actualizar paciente" back="/patients" confirm/>
     <UForm
+        v-if="user"
         @submit="onSubmit"
         :state="editUserState"
         :schema="editUserSchema"
@@ -152,42 +188,79 @@ const editUserState = computed(() => ({
                 placeholder="eg. Doe"
             />
           </UFormGroup>
-          <UFormGroup
-              class="col-span-full"
-              label="Correo electrónico"
-              name="email"
-              required>
-            <UInput
-                required
-                v-model="user.email"
-                type="email"
-                placeholder="eg. john@doe.coms"
+          <UFormGroup label="Tipo de documento" name="typeDocument" required>
+            <USelect
+                placeholder="Selecciona un tipo de documento"
+                v-model="user.typeDocument"
+                :options="typeDocumentOptions"
             />
           </UFormGroup>
-          <UFormGroup
-              help="La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial eg. @, $, !, %, *, ?, &, #"
-              label="Contraseña"
-              name="password"
-              required>
+          <UFormGroup label="Número de documento" name="document" required>
             <UInput
                 required
-                v-model="user.password"
-                type="password"
-                placeholder="********"
+                v-model="user.document"
+                type="text"
+                placeholder="eg. 1234567890"
             />
           </UFormGroup>
-          <UFormGroup
-              help="La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial eg. @, $, !, %, *, ?, &, #"
-              label="Confirma la contraseña"
-              name="confirm_password"
-              required>
-            <UInput
-                required
-                v-model="user.confirm_password"
-                type="password"
-                placeholder="********"
+          <UFormGroup class="col-span-full">
+            <UCheckbox
+                :model-value="!!user.granted"
+                @update:model-value="user.granted = $event"
+                label="¿Puede iniciar sesíon?"
             />
           </UFormGroup>
+          <div
+              class="col-span-full space-y-4"
+              v-if="user.granted">
+            <UFormGroup
+                label="Correo electrónico"
+                name="email"
+                :required="user.granted && !user.phone">
+              <UInput
+                  :required="user.granted && !user.phone"
+                  v-model="user.email"
+                  type="email"
+                  placeholder="eg. john@doe.com"
+              />
+            </UFormGroup>
+            <UFormGroup
+                label="Teléfono celular"
+                name="phone"
+                :required="user.granted && !user.email"
+            >
+              <UInput
+                  :required="user.granted && !user.email"
+                  v-model="user.phone"
+                  type="text"
+                  placeholder="eg. 3001234567"
+              />
+            </UFormGroup>
+            <UFormGroup
+                help="La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial eg. @, $, !, %, *, ?, &, #"
+                label="Contraseña"
+                name="password"
+                required>
+              <UInput
+                  required
+                  v-model="user.password"
+                  type="password"
+                  placeholder="********"
+              />
+            </UFormGroup>
+            <UFormGroup
+                help="La contraseña debe contener al menos una letra minúscula, una letra mayúscula, un número y un carácter especial eg. @, $, !, %, *, ?, &, #"
+                label="Confirma la contraseña"
+                name="confirm_password"
+                required>
+              <UInput
+                  required
+                  v-model="user.confirm_password"
+                  type="password"
+                  placeholder="********"
+              />
+            </UFormGroup>
+          </div>
         </article>
       </UCard>
       <UButton type="submit" block>

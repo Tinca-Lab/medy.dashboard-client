@@ -71,6 +71,7 @@ const onSubmit = async () => {
         granted: createUser.value.granted,
         password: createUser.value.password,
         confirmPassword: createUser.value.confirm_password,
+        kind: createUser.value.kind,
         tenantId: user.value.tenantId,
       },
     })
