@@ -27,6 +27,9 @@ const createAppointmentSchema = z.object({
     message: 'El profesional es requerido',
   }),
   notes: z.string().optional(),
+  place: z.string({
+    message: 'El lugar de la cita médica es requerido',
+  }),
 });
 
 // data
@@ -36,12 +39,14 @@ const createAppointment = ref<{
   date: string;
   serviceId: string;
   notes: string;
+  place: string;
 }>({
   doctorId: '',
   patientId: '',
   date: '',
   serviceId: '',
   notes: '',
+  place: '',
 });
 const isCreating = ref(false);
 
@@ -109,6 +114,7 @@ const onSubmit = async () => {
       method: 'POST',
       body: {
         ...createAppointment.value,
+        place: createAppointment.value.place.toUpperCase(),
         date: new Date(createAppointment.value.date).toISOString(),
       },
     })
@@ -124,6 +130,7 @@ const onSubmit = async () => {
       date: '',
       serviceId: '',
       notes: '',
+      place: '',
     }
     await router.push('/appointments');
   } catch (e: unknown | any) {
@@ -154,6 +161,7 @@ const createAppointmentState = computed(() => ({
   serviceId: createAppointment.value.serviceId,
   doctorId: createAppointment.value.doctorId,
   notes: createAppointment.value.notes,
+  place: createAppointment.value.place,
 }))
 
 
@@ -290,6 +298,17 @@ watch(createAppointment, () => {
                 type="datetime-local"
                 v-model="createAppointment.date"
                 label="Fecha de la cita"
+                required/>
+          </UFormGroup>
+
+          <UFormGroup
+              required
+              label="¿Dónde?"
+          >
+            <UInput
+                input-class="uppercase"
+                v-model="createAppointment.place"
+                placeholder="eg. Hospital, Clínica, Consultorio"
                 required/>
           </UFormGroup>
 

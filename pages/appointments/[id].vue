@@ -17,6 +17,7 @@ const {data: appointment, error: errorAppointment} = useApi<any>(`/appointments/
   method: 'GET',
   transform: (appointment) => ({
     date: dayjs(appointment.date).format('YYYY-MM-DDTHH:mm'),
+    place: appointment.place,
     patient: {
       _id: appointment.patient._id,
       name: appointment.patient.name,
@@ -63,6 +64,9 @@ const editAppointmentSchema = z.object({
     lastname: z.string(),
   }),
   notes: z.string().optional(),
+  place: z.string({
+    message: 'El lugar de la cita médica es requerido',
+  }),
 });
 
 
@@ -156,6 +160,7 @@ const editAppointmentState = computed(() => ({
   service: appointment.value?.service,
   doctor: appointment.value?.doctor,
   notes: appointment.value?.notes,
+  place: appointment.value?.place,
 }));
 
 const onSubmit = async () => {
@@ -167,6 +172,7 @@ const onSubmit = async () => {
       body: {
         date: new Date(appointment.value?.date).toISOString(),
         notes: appointment.value?.notes || undefined,
+        place: appointment.value?.place.toUpperCase(),
         service: {
           _id: appointment.value?.service._id,
           name: appointment.value?.service.name,
@@ -219,6 +225,7 @@ watch([appointment, services], () => {
         confirm
     />
     <UForm
+        v-if="appointment"
         @submit="onSubmit"
         :state="editAppointmentState"
         :schema="editAppointmentSchema"
@@ -330,6 +337,18 @@ watch([appointment, services], () => {
                 type="datetime-local"
                 v-model="appointment.date"
                 label="Fecha de la cita"
+                required/>
+          </UFormGroup>
+
+          <UFormGroup
+              required
+              name="place"
+              label="¿Dónde?"
+          >
+            <UInput
+                input-class="uppercase"
+                v-model="appointment.place"
+                placeholder="eg. Hospital, Clínica, Consultorio"
                 required/>
           </UFormGroup>
 

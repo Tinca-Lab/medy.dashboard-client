@@ -30,6 +30,10 @@ const columns = [
     sortable: true,
   },
   {
+    label: 'Lugar',
+    key: 'place',
+  },
+  {
     label: 'Fecha',
     key: 'date',
     sortable: true,
@@ -61,6 +65,8 @@ const sort = ref('desc')
 
 const queryAppointment: Ref<string> = ref('');
 const isLoadingDeletingAppointment: Ref<boolean> = ref(false);
+
+const isLoadingDownloadingAppointment: Ref<boolean> = ref(false);
 
 const {
   data: appointments,
@@ -118,6 +124,7 @@ const {
       doctor: `${appointment.doctor.name} ${appointment.doctor.lastname}`,
       patient: `${appointment.patient.name} ${appointment.patient.lastname}`,
       date: dayjs(appointment.date).format('MMM D, YYYY h:mm A'),
+      place: appointment.place,
       createdAt: dayjs(appointment.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(appointment.updatedAt).format('MMM D, YYYY h:mm A'),
     }))
@@ -163,6 +170,30 @@ const onDeleteAppointment = async (id: string) => {
   }
 }
 
+
+const onDownloadAppointment = async (id: string) => {
+  try {
+    isLoadingDownloadingAppointment.value = true;
+    const response: { data: Buffer } = await $api(`/appointments/${id}/download`, {
+      method: 'GET',
+    });
+    const url = window.URL.createObjectURL(new Blob([new Uint8Array(response.data).buffer]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Orden-Cita-${id}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (e: unknown | any) {
+    toast.add({
+      title: '¡Ups!',
+      description: e.data.message || 'Ha ocurrido un error desconocido al descargar la orden',
+      color: 'red',
+    });
+  } finally {
+    isLoadingDownloadingAppointment.value = false;
+  }
+}
 </script>
 
 <template>
@@ -207,6 +238,15 @@ const onDeleteAppointment = async (id: string) => {
       </template>
       <template #actions-data="{row}">
         <article class="space-x-2">
+          <UButton
+              :loading="isLoadingDownloadingAppointment"
+              :disabled="isLoadingDownloadingAppointment"
+              @click="onDownloadAppointment(row._id)"
+              title="Descargar orden"
+              variant="ghost"
+              color="yellow"
+              icon="i-heroicons-folder-arrow-down"
+          />
           <UButton
               :to="`/appointments/${row._id}`"
               size="sm"
