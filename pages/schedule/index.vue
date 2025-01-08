@@ -9,7 +9,7 @@
         />
       </UFormGroup>
     </template>
-    <section class="grid grid-cols-7 rounded bg-teal-100 mb-2">
+    <section class="grid grid-cols-7 rounded bg-primary-100 mb-2">
       <div
           v-for="day in days"
           :key="day"
@@ -23,10 +23,11 @@
           :key="week.id"
           class="grid grid-cols-7 gap-2">
         <UCard
+
             @click="onShowEvents(day.date)"
             v-for="day in week.days"
             :key="day.id"
-            class="h-24 text-right hover:bg-teal-50 cursor-pointer"
+            class="h-24 text-right hover:bg-primary-50 cursor-pointer rounded"
         >
           <p class="font-bold">
             {{ day.date }}
