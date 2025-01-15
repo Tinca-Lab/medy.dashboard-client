@@ -2,6 +2,7 @@
 import type {Ref} from "vue";
 import {z} from "zod";
 import dayjs from "dayjs";
+import {FetchError} from "ofetch";
 
 definePageMeta({
   auth: true,
@@ -173,20 +174,17 @@ const {data: patients, refresh: onFetchPatients} = await useApi<any[]>('/patient
       $or: [
         {
           name: {
-            $regex: queryPatient,
-            $options: 'i'
+            regex: queryPatient,
           }
         },
         {
           lastname: {
-            $regex: queryPatient,
-            $options: 'i'
+            regex: queryPatient,
           }
         },
         {
           document: {
-            $regex: queryPatient,
-            $options: 'i'
+            regex: queryPatient,
           }
         }
       ],
@@ -350,11 +348,11 @@ const onSubmit = async () => {
       description: 'Afiliación editada correctamente',
       color: 'green',
     })
-    await router.push('/pre/affiliation');
-  } catch (e: unknown | any) {
+    await FetchAffiliation();
+  } catch (e) {
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ha ocurrido un error al editar la afiliación',
+      description: (e as FetchError).data.message || 'Ha ocurrido un error al editar la afiliación',
       color: 'red',
     })
   } finally {

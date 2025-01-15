@@ -32,9 +32,7 @@ const editingDocumentSchema = z.object({
   }),
   prefix: z.string({
     message: 'Prefijo inválido'
-  }).regex(/[aA-zZ]/, {
-    message: 'El prefijo debe ser una letra'
-  }),
+  }).nullable(),
   givenBy: z.object({
     _id: z.string(),
     name: z.string(),
@@ -203,13 +201,11 @@ const onSearchAssistants = async (query: string) => {
           <UFormGroup
               label="Prefijo"
               name="prefix"
-              required>
+              help="El prefijo del documento puede ser opcional"
+          >
             <UInput
                 v-model="document.prefix"
-                required
                 placeholder="Prefijo"
-                :minlength="1"
-                :maxlength="1"
             />
           </UFormGroup>
 

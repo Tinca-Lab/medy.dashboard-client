@@ -2,6 +2,10 @@
 import type {Ref} from "vue";
 import {z} from "zod";
 import dayjs from "dayjs";
+import {FetchError} from "ofetch";
+import type {Patient} from "~/types/patient";
+import type {Document} from "~/types/document";
+import {type User, UserType} from "~/types/user";
 
 definePageMeta({
   auth: true,
@@ -61,9 +65,7 @@ const creatingDocumentsSchema = z.object({
   }),
   prefix: z.string({
     message: 'Prefijo inválido'
-  }).regex(/[aA-zZ]/, {
-    message: 'El prefijo debe ser una letra'
-  }),
+  }).nullable(),
   from: z.number({
     message: 'Desde inválido'
   }).int(),
@@ -77,9 +79,7 @@ const uploadingDocumentsSchema = z.object({
   }),
   prefix: z.string({
     message: 'Prefijo inválido'
-  }).regex(/[aA-zZ]/, {
-    message: 'El prefijo debe ser una letra'
-  }),
+  }).nullable(),
   from: z.number({
     message: 'Desde inválido'
   }).int(),
@@ -135,86 +135,86 @@ const uploadingPayload: Ref<{
   userId: ''
 })
 
-const {data: documents, refresh: FetchDocuments} = await useApi<any[]>('/document', {
-  params: {
-    page: page,
-    pageSize: pageSize,
-    sortBy: sortBy,
-    sort: sort,
-    filters: {
-      serial: {
-        $regex: serial,
-        $options: 'i'
+const {data, status, refresh} = await useAsyncData('documents', async () => {
+  const [documents, count] = await Promise.all([
+    $api('/document', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value,
+        sortBy: sortBy.value,
+        sort: sort.value,
+        filters: {
+          serial: {
+            regex: serial.value,
+          }
+        }
       }
-    }
-  },
-  watch: [page, pageSize, sortBy, sort],
-  transform: (data) => {
-    return data.map((document: any) => ({
+    }),
+    $api('/document/count', {
+      params: {
+        filters: {
+          serial: {
+            regex: serial.value,
+          }
+        }
+      }
+    })
+  ])
+
+  return {documents, count}
+}, {
+  server: true,
+  watch: [page, pageSize, sortBy, sort, serial],
+  default: () => ({
+    documents: [],
+    count: 0,
+  }),
+  transform: (data: { documents: Document[], count: string }) => ({
+    documents: data.documents?.map((document: Document) => ({
       _id: document._id,
+      serial: `${document.prefix}${document.serial}`,
+      kind: document.kind === 'CONTRACT' ? 'CONTRATO' : 'RECIBO',
+      givenBy: document.givenBy ? `${document.givenBy.name} ${document.givenBy.lastname}` : 'NO ASIGNADO',
       createdAt: dayjs(document.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(document.updatedAt).format('MMM D, YYYY h:mm A'),
-      kind: document.kind === 'CONTRACT' ? 'CONTRATO' : 'RECIBO',
-      serial: `${document.prefix}${document.serial}`,
-      givenBy: document.givenBy ? `${document.givenBy.name} ${document.givenBy.lastname}` : 'NO ASIGNADO'
-    }))
-  }
-});
+    })),
+    count: Number(data.count),
+  })
+})
 
-const {data: count, refresh: FetchCount} = await useApi<number>('/document/count', {
-  params: {
-    filters: {
-      serial: {
-        $regex: serial,
-        $options: 'i'
-      }
-    }
-  },
-  watch: [serial],
-  server: false,
-  lazy: true,
-  transform: (data) => {
-    return Number(data);
-  }
-});
-
-const {data: assistants, refresh: FetchAssistants} = await useApi<any[]>('/users', {
+const {data: assistants, refresh: FetchAssistants} = await useApi<User[]>('/users', {
   params: {
     page: 1,
     pageSize: 10,
     sortBy: 'name',
     sort: 'desc',
     filters: {
-
-      $or: [
+      or: [
         {
           document: {
-            $regex: queryAssistant,
-            $options: 'i'
+            regex: queryAssistant,
           },
         },
         {
           name: {
-            $regex: queryAssistant,
-            $options: 'i'
+            regex: queryAssistant,
           },
         },
         {
           lastname: {
-            $regex: queryAssistant,
-            $options: 'i'
+            regex: queryAssistant,
           }
         }
       ],
-      kind: 'ASSISTANT'
+      kind: UserType.ASSISTANT
     },
   },
-  transform: (data) => {
-    return data.map((assistant: any) => ({
-      _id: assistant._id,
-      full_name: `${assistant.name} ${assistant.lastname}`
-    }))
-  }
+  transform: (data: User[]) => data.map((user: User) => ({
+    _id: user._id,
+    name: user.name,
+    lastname: user.lastname,
+    kind: user.kind,
+  }))
 });
 
 // computed
@@ -247,9 +247,6 @@ const onCreateDocuments = async () => {
         to: payload.value.to
       }
     });
-    isLoadingCreatingDocuments.value = false;
-    await FetchDocuments();
-    await FetchCount();
     toast.add({
       title: '¡Listo!',
       description: 'Documentos creados correctamente',
@@ -261,16 +258,15 @@ const onCreateDocuments = async () => {
       from: 0,
       to: 0
     }
-    isLoadingCreatingDocuments.value = false;
-    isCreatingDocuments.value = false;
-  } catch (e: unknown | any) {
-    isLoadingCreatingDocuments.value = false;
-    isCreatingDocuments.value = false;
+  } catch (e) {
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ha ocurrido un error inesperado al crear los documentos',
+      description: (e as FetchError).data.message || 'Ha ocurrido un error inesperado al crear los documentos',
       color: 'red'
     });
+  } finally {
+    isLoadingCreatingDocuments.value = false;
+    await refresh();
   }
 };
 
@@ -288,9 +284,6 @@ const onAssignDocuments = async () => {
         userId: uploadingPayload.value.userId
       }
     });
-    isLoadingUploadingDocuments.value = false;
-    await FetchDocuments();
-    await FetchCount();
     toast.add({
       title: '¡Listo!',
       description: 'Documentos assignados correctamente',
@@ -302,18 +295,17 @@ const onAssignDocuments = async () => {
       from: 0,
       to: 0
     }
-    isLoadingUploadingDocuments.value = false;
-    isUploadingDocuments.value = false;
-  } catch (e: unknown | any) {
+  } catch (e) {
+    toast.add({
+      title: '¡Ups!',
+      description: (e as FetchError).data.message || 'Ha ocurrido un error inesperado al asignar los documentos',
+      color: 'red'
+    });
+  } finally {
     await FetchDocuments();
     await FetchCount();
     isLoadingUploadingDocuments.value = false;
     isUploadingDocuments.value = false;
-    toast.add({
-      title: '¡Ups!',
-      description: e.data.message || 'Ha ocurrido un error inesperado al asignar los documentos',
-      color: 'red'
-    });
   }
 }
 
@@ -323,19 +315,19 @@ const onDeleteDocument = async (id: string) => {
     await $api(`/document/${id}`, {
       method: 'DELETE'
     });
-    await FetchDocuments();
-    await FetchCount();
     toast.add({
       title: '¡Listo!',
       description: 'Documento eliminado correctamente',
       color: 'green'
     })
-  } catch (e: unknown | any) {
+  } catch (e) {
     toast.add({
       title: '¡Ups!',
       description: e.data.message || 'Ha ocurrido un error inesperado al eliminar el documento',
       color: 'red'
     });
+  } finally {
+    await refresh();
   }
 }
 
@@ -367,7 +359,7 @@ const onSearchAssistants = async (q: string) => {
             @click="isUploadingDocuments = !isUploadingDocuments"
             variant="outline"
             trailing-icon="i-heroicons-arrow-up-on-square-stack">
-          Cargar documentos
+          Asignar documentos
         </UButton>
         <UButton
             @click="isCreatingDocuments = !isCreatingDocuments"
@@ -378,7 +370,7 @@ const onSearchAssistants = async (q: string) => {
     </nav>
     <UTable
         :columns="columns"
-        :rows="documents || []"
+        :rows="data.documents"
         class="bg-white dark:bg-gray-900 rounded-xl shadow"
     >
       <template #empty-state>
@@ -408,7 +400,7 @@ const onSearchAssistants = async (q: string) => {
     <UPagination
         v-model="page"
         :page-count="pageSize"
-        :total="count || 0"
+        :total="data.count"
     />
     <!--    -->
     <Teleport to="body">
@@ -421,7 +413,7 @@ const onSearchAssistants = async (q: string) => {
               @submit="onCreateDocuments">
 
             <UFormGroup
-                label="Tipo de documento"
+                label="¿Qué tipo de documento deseas crear?"
                 name="kind"
                 required>
               <USelect
@@ -435,7 +427,8 @@ const onSearchAssistants = async (q: string) => {
             <UFormGroup
                 label="Prefijo"
                 name="prefix"
-                required>
+                help="El prefijo de los documentos puede ser opcional"
+            >
               <UInput
                   type="text"
                   v-model="payload.prefix"
@@ -562,7 +555,7 @@ const onSearchAssistants = async (q: string) => {
                 :loading="isLoadingUploadingDocuments"
                 :disabled="isLoadingUploadingDocuments"
                 type="submit" block>
-              Cargar documentos
+              Asignar documentos
             </UButton>
           </UForm>
         </article>

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type {Ref} from "vue";
 import {z} from "zod";
+import type {Patient} from "~/types/patient";
+import {type Subscription, SubscriptionExpiration} from "~/types/subscription";
+import type {Document} from "~/types/document";
 
 definePageMeta({
   auth: true,
@@ -53,8 +56,10 @@ const affiliationStatus = [
 const isLoadingCreatingAffiliation: Ref<boolean> = ref(false);
 
 
-const queryPatient: Ref<string> = ref('');
-const queryContract: Ref<string> = ref('');
+const query = ref({
+  patient: '',
+  contract: ''
+})
 
 const payload: Ref<{
   patientId: string;
@@ -70,80 +75,75 @@ const payload: Ref<{
   logs: []
 });
 
-
-const {data: patients, refresh: onFetchPatients} = await useApi<any[]>('/patients', {
+const {
+  data: patients,
+  refresh: onFetchPatients
+} = await useAsyncData<Patient[]>('patients', () => $api('/patients', {
   method: 'GET',
-  server: false,
-  lazy: true,
   params: {
     page: 1,
     pageSize: 10,
     sortBy: 'name',
     sort: 'desc',
+  },
+  query: {
     filters: {
-      $or: [
+      or: [
         {
           name: {
-            $regex: queryPatient,
-            $options: 'i'
+            regex: query.value.patient,
           }
         },
         {
           lastname: {
-            $regex: queryPatient,
-            $options: 'i'
+            regex: query.value.patient,
           }
         },
         {
           document: {
-            $regex: queryPatient,
-            $options: 'i'
+            regex: query.value.patient,
+          }
+        },
+        {
+          email: {
+            regex: query.value.patient,
+          }
+        },
+        {
+          phone: {
+            regex: query.value.patient,
           }
         }
-      ],
+      ]
     }
   },
-  transform: (data) => {
-    return data.map((patient) => ({
-      _id: patient._id,
-      name: `${patient.name} ${patient.lastname}`,
-      email: patient.email,
-      document: patient.document,
-    }))
-  }
-})
+}), {})
 
-const {data: contracts, refresh: FetchContracts} = await useApi<any[]>('/document', {
+const {
+  data: contracts,
+  refresh: onFetchContracts
+} = await useAsyncData<Document[]>('documents', () => $api('/document', {
   method: 'GET',
-  server: false,
-  lazy: true,
   params: {
     page: 1,
     pageSize: 10,
     sortBy: 'serial',
     sort: 'desc',
+  },
+  query: {
     filters: {
       serial: {
-        $regex: queryContract,
-        $options: 'i'
+        regex: query.value.contract,
       },
       givenBy: {
-        $ne: null
+        neq: null
       },
       kind: 'CONTRACT'
     }
   },
-  transform: (data) => {
-    return data.map((contract) => ({
-      _id: contract._id,
-      serial: contract.serial,
-      prefix: contract.prefix,
-      full_serial: `${contract.prefix}${contract.serial}`,
-    }))
-  }
-})
+}), {})
 
-const {data: subscriptions} = await useApi<any[]>('/subscriptions', {
+const {data: subscriptions} = await useAsyncData<Subscription[]>('subscriptions', () => $api('/subscriptions', {
   method: 'GET',
   server: false,
   lazy: true,
@@ -152,16 +152,17 @@ const {data: subscriptions} = await useApi<any[]>('/subscriptions', {
     pageSize: 10,
     sortBy: 'name',
     sort: 'desc',
-    filters: {}
   },
-  transform: (data) => {
-    return data.map((subscription) => ({
-      _id: subscription._id,
-      name: subscription.name,
-      description: subscription.description,
-    }))
-  }
-})
+}), {
+  default: () => [],
+  transform: (data: Subscription[]) => data.map((subscription) => ({
+    _id: subscription._id,
+    name: subscription.name,
+    description: subscription.description,
+    price: subscription.price,
+    expiration: subscription.expiration,
+  }))
+}) as { data: Ref<Subscription[]> };
 
 
 // computed
@@ -173,21 +174,22 @@ const creatingAffiliationState = computed(() => ({
 }));
 
 // methods
-const onSearchPatients = async (q: string) => {
-  queryPatient.value = q;
+async function onSearchPatients(q: string): Promise<Patient[] | null> {
+  query.value.patient = q;
   await onFetchPatients();
   return patients.value;
 }
 
-const onSearchContracts = async (q: string) => {
-  queryContract.value = q;
-  await FetchContracts();
+async function onSearchContracts(q: string): Promise<Document[] | null> {
+  query.value.contract = q;
+  await onFetchContracts();
   return contracts.value;
 }
+
 const onCreateAffiliation = async () => {
   isLoadingCreatingAffiliation.value = true;
   try {
-    await $api('/affiliation', {
+    const affiliation: Subscription = await $api('/affiliation', {
       method: 'POST',
       body: {
         patientId: payload.value.patientId,
@@ -197,7 +199,7 @@ const onCreateAffiliation = async () => {
         logs: payload.value.logs
       }
     });
-    await router.push('/pre/affiliation');
+    await router.push(`/pre/affiliation/${affiliation._id}`);
     toast.add({
       title: '¡Listo!',
       description: 'Afiliacion creada correctamente',
@@ -234,44 +236,34 @@ const onCreateAffiliation = async () => {
       <UCard>
         <article class="space-y-4">
           <UFormGroup
-              label="Titular"
-              name="patient"
-              required>
+              label="¿Quién es el títular del contrato?"
+              name="patientId"
+              required
+          >
+            <template #help>
+              Si necesitas crear un nuevo titular, puedes hacerlo dando click
+              <ULink to="/patients/create?redirect=/pre/affiliation/create" class="underline">aquí</ULink>
+            </template>
             <USelectMenu
-                creatable
                 show-create-option-when="always"
-                searchable-placeholder="Buscar titular o escribe para crear uno nuevo"
-                :searchable="onSearchPatients as any"
-                v-model="payload.patientId"
-                required
-                placeholder="Seleccione un titular"
+                :searchable="onSearchPatients"
+                searchable-placeholder="Buscar un titular"
+                placeholder="Seleccionar un titular"
                 :options="patients || []"
-                option-attribute="name"
                 value-attribute="_id"
+                v-model="payload.patientId"
             >
-              <template #option-empty>
-                <UButton
-                    to="/patients/create?redirect=/pre/affiliation/create"
-                    variant="outline"
-                    size="sm"
-                >
-                  Crear titular
-                </UButton>
-              </template>
-              <template #option-create>
-                <UButton
-                    to="/patients/create?redirect=/pre/affiliation/create"
-                    variant="outline"
-                    size="sm"
-                >
-                  Crear titular
-                </UButton>
+              <template #option="{option: patient}">
+                <p>
+                  <span>{{ patient.name }} {{ patient.lastname }}</span> con documento
+                  <span>{{ patient.typeDocument }}</span>.<span>{{ patient.document }}</span>
+                </p>
               </template>
             </USelectMenu>
           </UFormGroup>
 
           <UFormGroup
-              label="Tipo de afiliacion"
+              label="¿Qué tipo de contrato?"
               name="subscription"
               required>
             <USelectMenu
@@ -280,28 +272,50 @@ const onCreateAffiliation = async () => {
                 placeholder="Seleccione un tipo de afiliacion"
                 option-attribute="name"
                 value-attribute="_id"
-                :options="subscriptions || []"
-            />
+                :options="subscriptions"
+            >
+              <template #option="{option: subscription}">
+                <p>
+                  <span>{{ subscription.name }} </span> de <span>{{
+                    new Intl.NumberFormat('es-CO', {
+                      style: 'currency',
+                      currency: 'COP'
+                    }).format(subscription.price)
+                  }}</span>
+                </p>
+              </template>
+            </USelectMenu>
           </UFormGroup>
 
           <UFormGroup
-              label="Contrato"
+              label="¿Cúal es el contrato?"
               name="contract"
               required>
+            <template #help>
+              Si necesitas asignar un o varios contratos a un asesor, puedes hacerlo dando click
+              <ULink to="/pre/documents?redirect=/pre/affiliation/create" class="underline">aquí</ULink>
+            </template>
             <USelectMenu
                 searchable-placeholder="Buscar contratos asignados"
-                :searchable="onSearchContracts as any"
-                :options="contracts || []"
+                :searchable="onSearchContracts"
+                :options="contracts as Document[]"
                 v-model="payload.contract"
                 option-attribute="full_serial"
                 value-attribute="_id"
                 required
                 placeholder="Seleccione un contrato"
-            />
+            >
+              <template #option="{option: contract}">
+                <p>
+                  <span>{{ contract.prefix }}</span> <span>{{ contract.serial }}</span> cargado a
+                  <span>{{ contract.givenBy.name }} {{ contract.givenBy.lastname }}</span>
+                </p>
+              </template>
+            </USelectMenu>
           </UFormGroup>
 
           <UFormGroup
-              label="Estado"
+              label="¿Que estado tiene la afiliación?"
               name="kind"
               required>
             <USelect

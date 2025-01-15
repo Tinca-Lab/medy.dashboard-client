@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type {Ref} from "vue";
 import dayjs from "dayjs";
+import type {Doctor} from "~/types/doctors";
+import type {Service} from "~/types/service";
+import {FetchError} from "ofetch";
 
 useHead({
   title: 'Citas médicas',
@@ -56,55 +59,60 @@ const pageSize = ref(10);
 const sortBy = ref('createdAt');
 const sort = ref('asc');
 
-const queryService: Ref<string> = ref('');
+const query: Ref<string> = ref('');
 const isLoadingDeletingService: Ref<boolean> = ref(false);
 
 
-const {data: services, pending: isLoadingServices, refresh: onFetchServices} = await useApi<any[]>('/services', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  watch: [page, pageSize, sortBy, sort],
-  params: {
-    page: page.value,
-    pageSize: pageSize.value,
-    sortBy: sortBy.value,
-    sort: sort.value,
-    filters: {
-      name: {
-        $regex: queryService,
-        $options: 'i'
+const {data, status} = await useAsyncData('services', async () => {
+  const [services, count] = await Promise.all([
+    $api('/services', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value,
+        sortBy: sortBy.value,
+        sort: sort.value,
+        filters: {
+          name: {
+            regex: query.value,
+          }
+        },
       }
-    }
-  },
-  transform: (data) => {
-    return data.map((service) => ({
+    }),
+    $api('/services/count', {
+      params: {
+        filters: {
+          name: {
+            regex: query.value,
+          }
+        },
+      }
+    }),
+  ])
+
+  return {services, count}
+}, {
+  server: true,
+  watch: [page, pageSize, sortBy, sort, query],
+  default: () => ({
+    services: [],
+    count: 0,
+  }),
+  transform: (data: { services: Service[], count: string }) => ({
+    services: data.services?.map((service: Service) => ({
       _id: service._id,
       name: service.name,
-      price: new Intl.NumberFormat('es-CO', {style: 'currency', currency: 'COP'}).format(service.price),
+      price: new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+      }).format(service.price),
       discount: service.discount,
       createdAt: dayjs(service.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(service.updatedAt).format('MMM D, YYYY h:mm A'),
-    }))
-  }
+    })),
+    count: Number(data.count),
+  })
 })
 
-const {data: count, refresh: onFetchCount} = await useApi<number>('/services/count', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  transform: (data) => Number(data),
-  params: {
-    filters: {
-      name: {
-        $regex: queryService,
-        $options: 'i'
-      }
-    }
-  }
-});
-
-const selected: Ref<any[]> = ref([]);
 
 // methods
 const onDeleteService = async (id: string) => {
@@ -121,18 +129,14 @@ const onDeleteService = async (id: string) => {
       description: 'El servicio ha sido eliminado correctamente',
       color: 'green',
     });
-    await onFetchServices();
-    await onFetchCount();
-    isLoadingDeletingService.value = true;
-  } catch (e: unknown | any) {
-    isLoadingDeletingService.value = true;
-    await onFetchServices();
-    await onFetchCount();
+  } catch (e) {
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ha ocurrido un error al eliminar el servicio',
+      description: (e as FetchError).data.message || 'Ha ocurrido un error al eliminar el servicio',
       color: 'red',
     });
+  } finally {
+    isLoadingDeletingService.value = false;
   }
 }
 </script>
@@ -145,7 +149,7 @@ const onDeleteService = async (id: string) => {
           label="Buscar servicios"
       >
         <UInput
-            v-model="queryService"
+            v-model="query"
             placeholder="Buscar servicios"
         />
       </UFormGroup>
@@ -156,11 +160,10 @@ const onDeleteService = async (id: string) => {
       </UButton>
     </nav>
     <UTable
-        v-model="selected"
-        :loading="isLoadingServices"
+        :loading="status === 'pending'"
         class="bg-white rounded-xl shadow"
         :columns="columns"
-        :rows="services || []"
+        :rows="data.services"
     >
       <template #empty-state>
         <div class="flex items-center justify-center h-64">
@@ -197,7 +200,7 @@ const onDeleteService = async (id: string) => {
     <UPagination
         v-model="page"
         :page-count="pageSize"
-        :total="count || 0"
+        :total="data.count"
     />
   </div>
 </template>

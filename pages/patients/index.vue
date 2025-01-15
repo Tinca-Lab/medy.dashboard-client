@@ -2,6 +2,8 @@
 import {UserType} from "~/types/user";
 import type {Ref} from "vue";
 import dayjs from "dayjs";
+import type {Patient} from "~/types/patient";
+import {FetchError} from "ofetch";
 
 useHead({
   title: 'Inicio',
@@ -43,15 +45,21 @@ const userKindOptions = [
   {
     label: 'Administrador',
     value: UserType.ADMIN,
-  },];
+  }
+];
+
 const columns = [
   {
     label: 'Nombre',
     key: 'name',
   },
   {
+    label: 'Apellido',
+    key: 'lastname',
+  },
+  {
     label: 'Tipo de documento',
-    key: 'typeDocument',
+    key: 'type_document',
   },
   {
     label: 'Documento',
@@ -87,91 +95,106 @@ const pageSize = ref(10);
 const sortBy = ref('createdAt');
 const sort = ref('asc');
 
-const queryPatient: Ref<string> = ref('');
+const query: Ref<string | undefined> = ref('');
 
-const {data: patients, pending: isLoadingPatients, refresh: onFetchPatients} = await useApi<any[]>('/patients', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  watch: [page, pageSize, sortBy, sort],
-  params: {
-    page: page.value,
-    pageSize: pageSize.value,
-    sortBy: sortBy.value,
-    sort: sort.value,
-    filters: {
-      $or: [
-        {
-          name: {
-            $regex: queryPatient,
-            $options: 'i',
-          }
-        },
-        {
-          lastname: {
-            $regex: queryPatient,
-            $options: 'i',
-          }
-        },
-        {
-          document: {
-            $regex: queryPatient,
-            $options: 'i',
-          }
+
+const {data, status, refresh} = await useAsyncData('patients', async () => {
+  const [patients, count] = await Promise.all([
+    $api('/patients', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value,
+        sortBy: sortBy.value,
+        sort: sort.value,
+        filters: {
+          or: [
+            {
+              name: {
+                regex: query.value,
+              }
+            },
+            {
+              lastname: {
+                regex: query.value,
+              }
+            },
+            {
+              document: {
+                regex: query.value,
+              }
+            },
+            {
+              email: {
+                regex: query.value,
+              }
+            },
+            {
+              phone: {
+                regex: query.value,
+              }
+            }
+          ]
         }
-      ]
-    }
-  },
-  default: () => [],
-  watch: [queryPatient],
-  transform: (data) => {
-    return data.map((patient) => ({
+      }
+    }),
+    $api('/patients/count', {
+      params: {
+        filters: {
+          or: [
+            {
+              name: {
+                regex: query.value,
+              }
+            },
+            {
+              lastname: {
+                regex: query.value,
+              }
+            },
+            {
+              document: {
+                regex: query.value,
+              }
+            },
+            {
+              email: {
+                regex: query.value,
+              }
+            },
+            {
+              phone: {
+                regex: query.value,
+              }
+            }
+          ]
+        }
+      }
+    })
+  ])
+
+  return {patients, count}
+}, {
+  server: true,
+  watch: [page, pageSize, sortBy, sort, query],
+  default: () => ({
+    patients: [],
+    count: 0,
+  }),
+  transform: (data: { patients: Patient[], count: string }) => ({
+    patients: data.patients?.map((patient: Patient) => ({
       _id: patient._id,
-      name: `${patient.name} ${patient.lastname}`,
-      email: patient.email || 'N/A',
-      phone: patient.phone || 'N/A',
-      typeDocument: patient.typeDocument || 'N/A',
-      document: patient.document || 'N/A',
+      name: patient.name,
+      lastname: patient.lastname,
+      type_document: patient.typeDocument,
+      document: patient.document,
+      email: patient.email ?? 'NO REGISTRADO',
+      phone: patient.phone ?? 'NO REGISTRADO',
       createdAt: dayjs(patient.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(patient.updatedAt).format('MMM D, YYYY h:mm A'),
-    }))
-  }
+    })),
+    count: Number(data.count),
+  })
 })
-
-const {data: count, refresh: onFetchCount} = await useApi<number>('/patients/count', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  params: {
-    filters: {
-      $or: [
-        {
-          name: {
-            $regex: queryPatient,
-            $options: 'i',
-          }
-        },
-        {
-          lastname: {
-            $regex: queryPatient,
-            $options: 'i',
-          }
-        },
-        {
-          document: {
-            $regex: queryPatient,
-            $options: 'i',
-          }
-        }
-      ]
-    }
-  },
-  watch: [queryPatient],
-  default: () => 0,
-  transform: (data) => Number(data),
-});
-
-const selected: Ref<any[]> = ref([]);
 
 const onDeletePatient = async (id: string) => {
   if (!confirm('¿Estás seguro de eliminar este paciente? Esta acción no se puede deshacer')) {
@@ -186,16 +209,14 @@ const onDeletePatient = async (id: string) => {
       description: 'El paciente ha sido eliminado exitosamente',
       color: 'green'
     })
-  } catch (e: unknown | any) {
-
+  } catch (e) {
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ocurrió un error desconocido al eliminar el paciente',
+      description: (e as FetchError).data.message || 'Ocurrió un error desconocido al eliminar el paciente',
       color: 'red'
     })
   } finally {
-    await onFetchPatients();
-    await onFetchCount();
+    await refresh();
   }
 }
 </script>
@@ -209,7 +230,7 @@ const onDeletePatient = async (id: string) => {
       >
         <UInput
             placeholder="Buscar paciente"
-            v-model="queryPatient"
+            v-model="query"
         />
       </UFormGroup>
       <UButton
@@ -219,11 +240,10 @@ const onDeletePatient = async (id: string) => {
       </UButton>
     </nav>
     <UTable
-        v-model="selected"
-        :loading="isLoadingPatients"
+        :loading="status  === 'pending'"
         class="bg-white rounded-xl shadow"
         :columns="columns"
-        :rows="patients || []"
+        :rows="data?.patients"
     >
       <template #empty-state>
         <div class="flex items-center justify-center h-64">
@@ -257,10 +277,11 @@ const onDeletePatient = async (id: string) => {
         </article>
       </template>
     </UTable>
+
     <UPagination
         v-model="page"
         :page-count="pageSize"
-        :total="count || 0"
+        :total="data?.count"
     />
   </div>
 </template>

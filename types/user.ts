@@ -6,3 +6,10 @@ export enum UserType {
     ASSISTANT = 'ASSISTANT',
     CUSTOMER_SERVICE = 'CUSTOMER_SERVICE',
 }
+
+export type User = {
+    _id: string;
+    name: string;
+    lastname: string;
+    kind: UserType;
+}

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type {Ref} from "vue";
 import dayjs from "dayjs";
+import type {Patient} from "~/types/patient";
+import type {Doctor} from "~/types/doctors";
+import {FetchError} from "ofetch";
 
 useHead({
   title: 'Especialistas',
@@ -20,6 +23,10 @@ const columns = [
   {
     label: 'Nombre',
     key: 'name',
+  },
+  {
+    label: 'Apellido',
+    key: 'lastname',
   },
   {
     label: 'Correo electrónico',
@@ -43,7 +50,7 @@ const columns = [
 
 
 // data
-const queryDoctor: Ref<string> = ref('');
+const query: Ref<string> = ref('');
 const isLoadingDeletingDoctor = ref(false);
 
 const page = ref(1);
@@ -51,82 +58,51 @@ const pageSize = ref(10);
 const sortBy = ref('createdAt');
 const sort = ref('asc');
 
-const {data: doctors, pending: isLoadingDoctors, refresh: FetchDoctors} = await useApi<any[]>('/doctors', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  watch: [page, pageSize, sortBy, sort],
-  params: {
-    page: page.value,
-    pageSize: pageSize.value,
-    sortBy: sortBy.value,
-    sort: sort.value,
-    filters: {
-      $or: [
-        {
+const {data, status} = await useAsyncData('doctors', async () => {
+  const [doctors, count] = await Promise.all([
+    $api('/doctors', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value,
+        sortBy: sortBy.value,
+        sort: sort.value,
+        filters: {
           name: {
-            $regex: queryDoctor,
-            $options: 'i',
-          }
-        },
-        {
-          lastname: {
-            $regex: queryDoctor,
-            $options: 'i',
-          }
-        },
-        {
-          document: {
-            $regex: queryDoctor,
-            $options: 'i',
+            regex: query.value,
           }
         }
-      ]
-    }
-  },
-  transform: (data) => {
-    return data.map((doctor) => ({
-      _id: doctor._id,
-      name: `${doctor.name} ${doctor.lastname}`,
-      email: doctor.email || 'N/A',
+      }
+    }),
+    $api('/doctors/count', {
+      params: {
+        filters: {
+          name: {
+            regex: query.value,
+          }
+        }
+      }
+    })
+  ])
+
+  return {doctors, count}
+}, {
+  server: true,
+  watch: [page, pageSize, sortBy, sort, query],
+  default: () => ({
+    doctors: [],
+    count: 0,
+  }),
+  transform: (data: { doctors: Doctor[], count: string }) => ({
+    doctors: data.doctors?.map((doctor: Doctor) => ({
+      name: doctor.name,
+      lastname: doctor.lastname,
+      email: doctor.email ?? 'NO REGISTRADO',
       createdAt: dayjs(doctor.createdAt).format('MMM D, YYYY h:mm A'),
       updatedAt: dayjs(doctor.updatedAt).format('MMM D, YYYY h:mm A'),
-    }))
-  }
+    })),
+    count: Number(data.count),
+  })
 })
-
-const {data: count, refresh: FetchCount} = await useApi<number>('/doctors/count', {
-  method: 'GET',
-  server: false,
-  lazy: true,
-  params: {
-    filters: {
-      $or: [
-        {
-          name: {
-            $regex: queryDoctor,
-            $options: 'i',
-          }
-        },
-        {
-          lastname: {
-            $regex: queryDoctor,
-            $options: 'i',
-          }
-        },
-        {
-          document: {
-            $regex: queryDoctor,
-            $options: 'i',
-          }
-        }
-      ]
-    }
-  },
-  transform: (data) => Number(data),
-});
-
-const selected: Ref<any[]> = ref([]);
 
 const onDeleteDoctor = async (id: string) => {
   if (!confirm('¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer')) {
@@ -142,16 +118,14 @@ const onDeleteDoctor = async (id: string) => {
       description: 'El profesional ha sido eliminado exitosamente',
       color: 'green'
     })
-    isLoadingDeletingDoctor.value = false;
-    await FetchDoctors();
-    await FetchCount();
-  } catch (e: unknown | any) {
-    isLoadingDeletingDoctor.value = false;
+  } catch (e) {
     toast.add({
       title: '¡Ups!',
-      description: e.data.message || 'Ocurrió un error desconocido al eliminar el usuario',
+      description: (e as FetchError).data.message || 'Ocurrió un error desconocido al eliminar el usuario',
       color: 'red'
     })
+  } finally {
+    isLoadingDeletingDoctor.value = false;
   }
 };
 </script>
@@ -165,7 +139,7 @@ const onDeleteDoctor = async (id: string) => {
       >
         <UInput
             placeholder="Buscar doctor"
-            v-model="queryDoctor"
+            v-model="query"
         />
       </UFormGroup>
       <UButton
@@ -175,11 +149,10 @@ const onDeleteDoctor = async (id: string) => {
       </UButton>
     </nav>
     <UTable
-        v-model="selected"
-        :loading="isLoadingDoctors"
+        :loading="status === 'pending'"
         class="bg-white rounded-xl shadow"
         :columns="columns"
-        :rows="doctors || []"
+        :rows="data.doctors"
     >
       <template #empty-state>
         <div class="flex items-center justify-center h-64">
@@ -218,7 +191,7 @@ const onDeleteDoctor = async (id: string) => {
     <UPagination
         v-model="page"
         :page-count="pageSize"
-        :total="count || 0"
+        :total="data.count"
     />
   </div>
 </template>

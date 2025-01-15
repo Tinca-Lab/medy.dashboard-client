@@ -37,7 +37,7 @@ const onSubmit = async () => {
 
 <template>
   <nav
-      class="flex justify-end border-b border-b-gray-300 dark:border-gray-600 p-4 fixed top-0 left-0 w-full dark:bg-cool-900">
+      class="flex justify-end border-b border-b-gray-300 dark:border-gray-600 p-4 fixed top-0 left-0 w-full dark:bg-gray-900">
     <ClientOnly>
       <UButton
           :icon="isDark ? 'i-heroicons-moon-20-solid' : 'i-heroicons-sun-20-solid'"
@@ -48,7 +48,7 @@ const onSubmit = async () => {
       />
     </ClientOnly>
   </nav>
-  <section class="dark:bg-cool-900">
+  <section class="dark:bg-gray-900">
     <FormAuth
         v-model:email="payload.email"
         v-model:password="payload.password"
